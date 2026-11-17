@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>The World in Blocks</title>
+<meta name="description" content="A Minecraft server that is the real Earth: one block is one metre. Walk through Berlin, climb the Matterhorn, ride a plane, run a shop. Java and Bedrock.">
+<style>
+  :root { --bg:#0b0d10; --card:#14181d; --line:#252b33; --text:#eef1f4; --dim:#98a2ad; --accent:#6ee7a0; --accent-ink:#06220f; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#f6f7f8; --card:#fff; --line:#dde1e5; --text:#14181d; --dim:#59636e; --accent:#12803f; --accent-ink:#fff; } }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,system-ui,sans-serif; }
+  a { color:var(--accent); }
+  .wrap { width:100%; max-width:980px; margin:0 auto; padding:0 16px; }
+  nav { display:flex; align-items:center; gap:18px; padding:16px 0; font-size:14px; }
+  nav b { font-size:16px; margin-right:auto; letter-spacing:-.01em; }
+  nav a { color:var(--dim); text-decoration:none; } nav a:hover { color:var(--text); }
+  .hero { padding:56px 0 36px; }
+  .hero h1 { font-size:clamp(34px,7vw,64px); line-height:1.05; margin:0 0 16px; letter-spacing:-.03em; }
+  .hero h1 span { color:var(--accent); }
+  .hero p { font-size:clamp(17px,2.4vw,20px); color:var(--dim); max-width:640px; margin:0 0 26px; }
+  .cta { display:flex; flex-wrap:wrap; gap:10px; }
+  .btn { display:inline-block; padding:12px 20px; border-radius:12px; font-weight:600; text-decoration:none; border:1px solid var(--line); color:var(--text); background:var(--card); font-size:15px; }
+  .btn.pri { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn:hover { filter:brightness(1.1); }
+  h2 { font-size:26px; letter-spacing:-.02em; margin:0 0 6px; }
+  .sub { color:var(--dim); margin:0 0 22px; }
+  section { padding:34px 0; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; }
+  .card h3 { margin:0 0 6px; font-size:17px; }
+  .card p { margin:0; color:var(--dim); font-size:14.5px; }
+  .join { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+  .addr { display:flex; align-items:center; gap:10px; margin:10px 0 4px; background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:10px 12px; font:14.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; word-break:break-all; }
+  .addr span { flex:1; }
+  .addr button { font:inherit; font-family:system-ui,sans-serif; font-size:13px; cursor:pointer; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:8px; padding:5px 10px; }
+  .addr button:hover { border-color:var(--accent); }
+  .small { font-size:13px; color:var(--dim); }
+  ol { margin:8px 0 0 18px; padding:0; color:var(--dim); font-size:14.5px; } li { margin:2px 0; }
+  code { font:13.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:1px 6px; color:var(--text); }
+  .cmds { display:grid; gap:8px 20px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+  .cmds div { color:var(--dim); font-size:14.5px; }
+  .try { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:26px; display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+  .try div { flex:1 1 320px; } .try h2 { margin-bottom:4px; }
+  footer { border-top:1px solid var(--line); margin-top:30px; padding:22px 0 40px; color:var(--dim); font-size:13px; }
+  footer p { margin:0 0 8px; max-width:760px; }
+  @media (max-width:560px) { nav a.hide { display:none; } .hero { padding-top:30px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav><b>The World in Blocks</b><a class="hide" href="#features">What you can do</a><a class="hide" href="#commands">Commands</a><a href="#join">Join</a><a href="walk.html">Try it</a></nav>
+
+  <header class="hero">
+    <h1>The whole Earth,<br><span>one block per metre.</span></h1>
+    <p>A Minecraft server that is the real world. Walk through Berlin, climb the Matterhorn, take a flight, open a shop, run a datacenter. Every street is where it really is.</p>
+    <div class="cta"><a class="btn pri" href="#join">Join the server</a><a class="btn" href="walk.html">Walk around in your browser</a></div>
+  </header>
+
+  <section id="join">
+    <h2>Join</h2>
+    <p class="sub">Free. Java and Bedrock players share the same world.</p>
+    <div class="join">
+      <div class="card">
+        <h3>Java Edition</h3>
+        <div class="addr"><span id="a1">mc.flowsearch.org</span><button data-copy="a1" type="button">Copy</button></div>
+        <ol><li>Multiplayer, Add Server</li><li>Paste the address</li><li>Join</li></ol>
+        <p class="small" style="margin-top:8px">Minecraft Java 26.3.</p>
+      </div>
+      <div class="card">
+        <h3>Bedrock Edition</h3>
+        <div class="addr"><span id="a2">exqtrohjcw.localto.net</span><button data-copy="a2" type="button">Copy</button></div>
+        <div class="addr"><span id="a3">5983</span><button data-copy="a3" type="button">Copy</button></div>
+        <ol><li>Play, Servers, Add Server</li><li>Paste the address and the port</li><li>Sign in with your Microsoft account</li></ol>
+        <p class="small" style="margin-top:8px">Phones, consoles and Windows. Bedrock players don't see cars, trains, the stadium or floating labels yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>What you can do</h2>
+    <p class="sub">It's a world first, and a game on top of it.</p>
+    <div class="grid">
+      <div class="card"><h3>Go anywhere</h3><p>Type a place name and you're there: the Eiffel Tower, the Burj Khalifa, a street in your own town. Real terrain, real buildings, real trees.</p></div>
+      <div class="card"><h3>Real buildings</h3><p>Microsoft's building footprints worldwide, plus Berlin's and the Netherlands' official 3D city models. Roof colours come from satellite pictures.</p></div>
+      <div class="card"><h3>Fly and ride</h3><p>Board a real flight from a real airport and walk around in the cabin. Ride the trains on the real Berlin timetable.</p></div>
+      <div class="card"><h3>Earn and build</h3><p>Drive a taxi, work a shift, buy a house, run a shop or a hotel, fill a datacenter with racks.</p></div>
+      <div class="card"><h3>Football always on</h3><p>A match is always being played in the stadium. Go and watch.</p></div>
+      <div class="card"><h3>Real weather</h3><p>The sky, rain and snow follow the real weather, so it's snowing where it really snows.</p></div>
+    </div>
+  </section>
+
+  <section id="commands">
+    <h2>A few commands</h2>
+    <p class="sub">Type these in chat.</p>
+    <div class="cmds">
+      <div><code>/go Matterhorn</code> go to any place by name</div>
+      <div><code>/tpll 52.52 13.40</code> go to coordinates</div>
+      <div><code>/where</code> where you are on Earth</div>
+      <div><code>/fly 5</code> fly at speed 1 to 10</div>
+      <div><code>/ride</code> take a flight</div>
+      <div><code>/work</code> start a job</div>
+      <div><code>/buy</code> buy what you're looking at</div>
+      <div><code>/money</code> your coins</div>
+      <div><code>/datacenter</code> go to a datacenter</div>
+      <div><code>/credits</code> where the data comes from</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="try">
+      <div><h2>No Minecraft? Look around here.</h2><p class="sub" style="margin:0">The browser version builds the same blocks while you look. It starts in Vatican City.</p></div>
+      <a class="btn pri" href="walk.html">Open the browser version</a>
+    </div>
+  </section>
+
+  <footer>
+    <p>Map data © OpenStreetMap contributors (ODbL), Microsoft Building Footprints, ESA WorldCover, Berlin Geoportal, 3DBAG, GHSL (European Commission JRC), Esri World Imagery. Type <code>/credits</code> in the game for the full list.</p>
+    <p>A non-commercial project by Flowsearch. Not made by or connected to Mojang or Microsoft.</p>
+  </footer>
+</div>
+<script>
+document.querySelectorAll("[data-copy]").forEach(function (b) {
+  b.onclick = function () {
+    var t = document.getElementById(b.dataset.copy).textContent.trim();
+    var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy"; }, 1500); };
+    try { navigator.clipboard.writeText(t).then(done, function () { b.textContent = "Select it"; }); } catch (e) { b.textContent = "Select it"; }
+  };
+});
+</script>
+</body>
+</html>

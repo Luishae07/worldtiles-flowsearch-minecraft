@@ -1,0 +1,26 @@
+# built programs and backups of them
+tools/mctiles/mctiles
+tools/mctiles/mctiles.*
+tools/landmarkvox/landmarkvox
+tools/worldtiles/WorldTiles.jar
+tools/worldtiles/libs/
+tools/worldtiles/out/
+tools/worldtiles/javac.log
+tools/worldtiles/extra/
+*.bak
+*.bak-*
+index.bak-before-landing.html
+
+# data and caches (other people's data, with their own licences; and big)
+data/
+landmarks/
+tools/landmarkvox/data/
+
+# keys and money
+*.key
+tomorrow.key
+money.txt
+houses.txt
+shops.txt
+hotel.txt
+licences.txt

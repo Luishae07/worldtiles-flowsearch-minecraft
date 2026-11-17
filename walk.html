@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>The world in blocks</title>
+<meta name="description" content="The whole world, built block by block from OpenStreetMap as you walk: every building, street, tree and fountain, one block per metre. Start in Vatican City, fly around, walk in and go inside the houses.">
+<style>
+  :root { --bg:#0a0a0a; --glass:rgba(10,10,10,.88); --line:rgba(255,255,255,.14); --text:#f2f2f2; --dim:#9a9a9a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,system-ui,sans-serif; overflow:hidden; }
+  canvas#c { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:grab; }
+  canvas#c:active { cursor:grabbing; }
+  body.walk canvas#c { cursor:none; }
+  .glass { background:var(--glass); backdrop-filter:blur(18px) saturate(1.6); -webkit-backdrop-filter:blur(18px) saturate(1.6); border:1px solid var(--line); border-radius:16px; }
+  #title { position:fixed; z-index:5; top:max(12px,env(safe-area-inset-top)); left:12px; padding:12px 16px; max-width:min(380px,calc(100vw - 24px)); }
+  #title h1 { margin:0; font-size:20px; letter-spacing:-.01em; }
+  #title p { margin:4px 0 0; color:var(--dim); font-size:13.5px; }
+  #net { position:fixed; z-index:5; top:calc(max(12px,env(safe-area-inset-top)) + 84px); left:12px; padding:6px 12px; font-size:12.5px; color:var(--dim); display:none; border-radius:14px; }
+  #net.on { display:block; } #net.warn { color:#ffb4a8; }
+  #bar { position:fixed; z-index:5; left:12px; right:12px; bottom:max(12px,env(safe-area-inset-bottom)); display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 14px; max-width:760px; }
+  #bar label { display:flex; align-items:center; gap:8px; color:var(--dim); font-size:13.5px; }
+  #bar input[type=range] { width:140px; accent-color:#e9e9e9; }
+  button { font:inherit; color:inherit; cursor:pointer; border:1px solid var(--line); background:rgba(255,255,255,.08); border-radius:18px; padding:6px 14px; font-size:14px; }
+  button:hover { background:rgba(255,255,255,.16); }
+  button:disabled { opacity:.5; cursor:default; }
+  select { font:inherit; font-size:14px; color:inherit; background:rgba(255,255,255,.08); border:1px solid var(--line); border-radius:18px; padding:6px 10px; max-width:190px; }
+  select option { background:#1a1a1a; color:#f2f2f2; }
+  button.pri { background:#e9e9e9; color:#0a0a0a; border-color:#e9e9e9; font-weight:600; }
+  #join { margin-left:auto; display:flex; align-items:center; gap:8px; }
+  #join small { color:var(--dim); }
+  #load { position:fixed; inset:0; z-index:9; display:grid; place-items:center; background:var(--bg); transition:opacity .5s; }
+  #load.gone { opacity:0; pointer-events:none; }
+  #load div { text-align:center; } #load b { display:block; font-size:22px; margin-bottom:6px; } #load span { color:var(--dim); }
+  #credit { position:fixed; z-index:4; right:10px; top:max(12px,env(safe-area-inset-top)); font-size:11.5px; color:#8c8c8c; text-align:right; max-width:min(260px,40vw); line-height:1.35; }
+  #credit a { color:#bdbdbd; }
+  #help { position:fixed; z-index:4; right:10px; bottom:max(14px,env(safe-area-inset-bottom)); font-size:12px; color:#8c8c8c; text-align:right; }
+  #pos { position:fixed; z-index:4; right:10px; bottom:calc(max(14px,env(safe-area-inset-bottom)) + 18px); font-size:12px; color:#8c8c8c; text-align:right; font-variant-numeric:tabular-nums; }
+  #cross { position:fixed; z-index:4; left:50%; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; display:none; pointer-events:none; }
+  #cross::before, #cross::after { content:""; position:absolute; background:rgba(255,255,255,.85); box-shadow:0 0 2px #000; }
+  #cross::before { left:7px; top:0; width:2px; height:16px; } #cross::after { top:7px; left:0; height:2px; width:16px; }
+  body.walk #cross { display:block; }
+  #walkhint { position:fixed; z-index:6; left:50%; top:46%; transform:translateX(-50%); padding:14px 20px; text-align:center; display:none; }
+  #walkhint b { display:block; font-size:18px; margin-bottom:4px; } #walkhint span { color:var(--dim); font-size:13.5px; }
+  body.walk.unlocked #walkhint { display:block; }
+  body.walk #title, body.walk #credit, body.walk #net { opacity:.0; pointer-events:none; }
+  body.walk.unlocked #title, body.walk.unlocked #credit, body.walk.unlocked #net { opacity:1; pointer-events:auto; }
+  @media (max-width:640px) { #credit, #help, #pos { display:none; } #join { margin-left:0; } #bar input[type=range] { width:100px; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="cross"></div>
+<div id="walkhint" class="glass"><b>Click to walk</b><span>W A S D move · mouse looks · Space jumps and climbs ladders · Shift runs (climbs down) · Esc to stop</span></div>
+<div id="title" class="glass"><h1 id="name">The world, in blocks</h1><p>One block per metre, built from open map data while you look. It starts in Vatican City; pick any place below. <a href="/" style="color:#bdbdbd">About the server</a></p></div>
+<div id="net" class="glass"></div>
+<div id="bar" class="glass">
+  <button id="walk" class="pri" type="button">Walk around</button>
+  <label>Time <input id="tod" type="range" min="0" max="100" value="80" aria-label="Time of day"></label>
+  <button id="top" type="button">From above</button>
+  <select id="place" aria-label="Go to a place"><option value="">Go to a place…</option></select>
+  <button id="reset" type="button">Back to Vatican City</button>
+  <div id="join"><button id="joinb" type="button">Join the server</button><small id="joins">Minecraft Java 26.3</small></div>
+</div>
+<div id="credit">Data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL), Microsoft Building Footprints, ESA WorldCover, GHSL. Landmark models: Open Landmarks (CC BY 4.0) and Alex Wohlbruck's landmarks (CC0). Block pictures drawn by Flowsearch. Not made by or connected to Mojang or Microsoft.</div>
+<div id="pos"></div>
+<div id="help">Drag to turn · scroll to zoom · right-drag or arrow keys to move</div>
+<div id="load"><div><b>Building the first squares…</b><span id="lmsg">Loading the map</span></div></div>
+
+<script type="module">
+import * as THREE from "./vendor/three.module.js";
+const $ = (id) => document.getElementById(id);
+const say = (t) => { $("lmsg").textContent = t; };
+// the address of the real Minecraft server (Java Edition); it is copied so that it can be pasted into "Add server"
+$("joinb").onclick = async () => {
+  try { await navigator.clipboard.writeText("mc.flowsearch.org"); $("joins").textContent = "mc.flowsearch.org copied: Multiplayer, Add Server"; }
+  catch (err) { $("joins").textContent = "Address: mc.flowsearch.org (Minecraft Java 26.3)"; }
+};
+
+// ---- surfaces and materials (the numbers match tools/mctiles/main.go) ----
+const S = {VOID: 0, GRASS: 1, PLAZA: 2, ASPHALT: 3, GRAVEL: 4, WATER: 5, DIRT: 6, SAND: 7};
+// tiles of the picture: where each block face finds its drawing
+const T = {GRASS: 0, GRASS_SIDE: 1, DIRT: 2, PLAZA: 3, ASPHALT: 4, GRAVEL: 5, WATER: 6, SAND: 7, SANDSTONE: 8, BRICK: 9, STONEBRICK: 10, CONCRETE: 11, PLASTER: 12, OCHRE: 13,
+  TERRACOTTA: 14, SLATE: 15, COPPER: 16, ROOFSTONE: 17, LOG: 18, LEAVES: 19, STONE: 20, PLANKS: 21, WINDOW: 22, LADDER: 23, GLASS: 24};
+const COLS = 7, ROWS = 4, TS = 16;
+const AIR = -1, GLASS = 100;
+const surfTop = {[S.GRASS]: T.GRASS, [S.PLAZA]: T.PLAZA, [S.ASPHALT]: T.ASPHALT, [S.GRAVEL]: T.GRAVEL, [S.WATER]: T.WATER, [S.DIRT]: T.DIRT, [S.SAND]: T.SAND};
+const wallTile = {10: T.SANDSTONE, 11: T.BRICK, 12: T.STONEBRICK, 13: T.CONCRETE, 14: T.PLASTER, 15: T.OCHRE};
+const roofTile = {20: T.TERRACOTTA, 21: T.SLATE, 22: T.COPPER, 23: T.ROOFSTONE};
+
+// the pictures of the blocks, drawn here (16 x 16 pixels each, a few colours with noise and a pattern)
+function atlas() {
+  const cv = document.createElement("canvas"); cv.width = COLS * TS; cv.height = ROWS * TS;
+  const g = cv.getContext("2d");
+  let seed = 7; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const px = (t, x, y, r, gg, b) => { g.fillStyle = `rgb(${r|0},${gg|0},${b|0})`; g.fillRect((t % COLS) * TS + x, Math.floor(t / COLS) * TS + y, 1, 1); };
+  const noisy = (t, c, amp, fn) => { for (let y = 0; y < TS; y++) for (let x = 0; x < TS; x++) { let k = (rnd() - 0.5) * amp, cc = c; if (fn) { const o = fn(x, y); if (o) cc = o; } px(t, x, y, cc[0] + k, cc[1] + k, cc[2] + k); } };
+  noisy(T.GRASS, [98, 150, 60], 38);
+  noisy(T.DIRT, [121, 85, 58], 30);
+  noisy(T.GRASS_SIDE, [121, 85, 58], 30, (x, y) => (y < 3 + (x * 7 % 3 === 0 ? 1 : 0) ? [98, 150, 60] : null));
+  noisy(T.PLAZA, [150, 146, 138], 26, (x, y) => ((x % 8 === 0 || y % 8 === 0) ? [118, 114, 108] : null));
+  noisy(T.ASPHALT, [58, 60, 64], 16);
+  noisy(T.GRAVEL, [140, 134, 124], 44);
+  noisy(T.WATER, [52, 110, 190], 22, (x, y) => (((x + y * 2) % 7 === 0) ? [86, 144, 214] : null));
+  noisy(T.SAND, [218, 200, 150], 20);
+  noisy(T.SANDSTONE, [214, 188, 142], 18, (x, y) => ((y % 4 === 3) ? [196, 170, 124] : null));
+  noisy(T.BRICK, [158, 84, 66], 22, (x, y) => ((y % 4 === 3 || (x + (Math.floor(y / 4) % 2) * 4) % 8 === 7) ? [196, 186, 170] : null));
+  noisy(T.STONEBRICK, [132, 130, 126], 18, (x, y) => ((y % 5 === 4 || (x + (Math.floor(y / 5) % 2) * 4) % 8 === 7) ? [100, 98, 94] : null));
+  noisy(T.CONCRETE, [176, 178, 180], 12);
+  noisy(T.PLASTER, [236, 230, 218], 10);
+  noisy(T.OCHRE, [222, 186, 120], 14, (x, y) => ((y % 6 === 5) ? [206, 170, 106] : null));
+  noisy(T.TERRACOTTA, [178, 96, 62], 20, (x, y) => ((y % 4 === 3) ? [140, 70, 44] : ((x + y) % 8 === 0 ? [196, 112, 76] : null)));
+  noisy(T.SLATE, [84, 90, 100], 18, (x, y) => ((y % 4 === 3) ? [62, 68, 78] : null));
+  noisy(T.COPPER, [92, 164, 140], 18, (x, y) => ((y % 4 === 3) ? [72, 138, 118] : null));
+  noisy(T.ROOFSTONE, [130, 128, 124], 16);
+  noisy(T.LOG, [96, 72, 44], 20, (x) => ((x % 4 === 0) ? [74, 54, 32] : null));
+  noisy(T.LEAVES, [56, 120, 44], 52);
+  noisy(T.STONE, [118, 118, 118], 22);
+  noisy(T.PLANKS, [172, 132, 82], 18, (x, y) => ((y % 4 === 3) ? [132, 98, 58] : null));
+  noisy(T.WINDOW, [40, 56, 84], 14, (x, y) => ((x < 2 || y < 2) ? [150, 140, 120] : ((x + y) % 9 === 0 ? [100, 130, 170] : null)));
+  noisy(T.GLASS, [150, 190, 230], 10, (x, y) => ((x < 1 || y < 1) ? [210, 225, 240] : null));
+  // the ladder: two rails and rungs; everything else is clear (the material cuts out clear pixels)
+  const lt = T.LADDER; g.fillStyle = "rgb(120,86,50)";
+  g.fillRect((lt % COLS) * TS + 3, Math.floor(lt / COLS) * TS, 2, TS); g.fillRect((lt % COLS) * TS + 11, Math.floor(lt / COLS) * TS, 2, TS);
+  for (let y = 1; y < TS; y += 4) g.fillRect((lt % COLS) * TS + 3, Math.floor(lt / COLS) * TS + y, 10, 2);
+  const tx = new THREE.CanvasTexture(cv);
+  tx.magFilter = THREE.NearestFilter; tx.minFilter = THREE.NearestFilter; tx.generateMipmaps = false; tx.colorSpace = THREE.SRGBColorSpace;
+  return tx;
+}
+
+// ---- the world: squares of 500 m, asked for when somebody looks or walks there ----
+// A square (x, z) covers the blocks x*500 .. x*500+499 and z*500 .. z*500+499 (z grows to the south; 0, 0 is St. Peter's).
+// It is stored with one block of its neighbours around it (PAD), so that the faces at the edge are right even when the next square is not here yet.
+const TILE = 500, PAD = 1, PP = TILE + 2 * PAD, CH = 50, NCH = TILE / CH;
+const tiles = new Map();      // "x,z" -> square
+const pending = new Set();    // squares being asked for
+let retryAt = 0, netMsg = "", netWarn = false;
+const td = new TextDecoder();
+const tkey = (x, z) => x + "," + z;
+
+function parseTile(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  if (td.decode(u8.subarray(0, 5)) !== "MCT2\n") throw new Error("The square is not in the right format.");
+  const hl = dv.getUint32(5, true), hdr = JSON.parse(td.decode(u8.subarray(9, 9 + hl)));
+  let p = 9 + hl; const N = PP * PP;
+  const ground = new Uint16Array(buf.slice(p, p + N * 2)); p += N * 2;
+  const arr = () => { const a = u8.subarray(p, p + N); p += N; return a; };
+  return {tx: hdr.x, tz: hdr.z, ground, surf: arr(), wallH: arr(), roofH: arr(), wallM: arr(), roofM: arr(), trees: hdr.trees || [], ext: new Map(), det: new Map(), step: 0, treeCells: null};
+}
+
+const windowAt = (x, z, r, wh) => wh >= 5 && r >= 1 && r < wh - 2 && (r % 4 === 1 || r % 4 === 2) && ((x + z) % 3 !== 0);
+
+// ---- the inside of the houses ----
+// A house is a hollow shell: walls one block thick with windows, a door, a floor every four blocks and one ladder to climb up. OpenStreetMap does
+// not know what is inside a house, so this is made up from the shape of the outline: the door is on the side that faces a street or plaza.
+function prepare(t) {
+  const W = PP, Hh = PP, N = W * Hh;
+  const isB = (i) => t.wallH[i] > 0 && t.surf[i] !== S.VOID;
+  const comp = new Int32Array(N).fill(-1), peri = new Uint8Array(N), door = new Uint8Array(N), ladder = new Uint8Array(N), hall = new Uint8Array(N);
+  const NB = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  let nc = 0;
+  const stack = [];
+  for (let s = 0; s < N; s++) {
+    if (!isB(s) || comp[s] >= 0) continue;
+    const cells = []; comp[s] = nc; stack.push(s);
+    while (stack.length) {
+      const j = stack.pop(); cells.push(j);
+      const x = j % W, z = (j / W) | 0;
+      for (const [dx, dz] of NB) {
+        const X = x + dx, Z = z + dz;
+        if (X < 0 || Z < 0 || X >= W || Z >= Hh) continue;
+        const k = Z * W + X; if (isB(k) && comp[k] < 0) { comp[k] = nc; stack.push(k); }
+      }
+    }
+    nc++;
+    let maxH = 0; const cands = [], cands2 = [];
+    for (const j of cells) {
+      maxH = Math.max(maxH, t.wallH[j]);
+      const x = j % W, z = (j / W) | 0; let out = false, roadSide = false, anySide = false;
+      for (const [dx, dz] of NB) {
+        const X = x + dx, Z = z + dz;
+        if (X < 0 || Z < 0 || X >= W || Z >= Hh) { out = true; continue; }
+        const k = Z * W + X;
+        if (isB(k)) continue;
+        out = true;
+        if (t.surf[k] === S.VOID || t.surf[k] === S.WATER || Math.abs(t.ground[k] - t.ground[j]) > 1) continue;
+        anySide = true; if (t.surf[k] === S.PLAZA || t.surf[k] === S.ASPHALT || t.surf[k] === S.GRAVEL) roadSide = true;
+      }
+      if (out) { peri[j] = 1; if (roadSide) cands.push(j); else if (anySide) cands2.push(j); }
+    }
+    const isHall = maxH > 40; if (isHall) for (const j of cells) hall[j] = 1;
+    const pick = cands.length ? cands : cands2;
+    let dj = -1;
+    if (pick.length) { dj = pick[(pick.length / 2) | 0]; door[dj] = 1; }
+    // a ladder in a room next to a wall, a few blocks from the door
+    if (!isHall && maxH >= 5 && dj >= 0) {
+      const dx0 = dj % W, dz0 = (dj / W) | 0; let best = -1, bd = 1e9;
+      for (const j of cells) {
+        if (peri[j]) continue;
+        const x = j % W, z = (j / W) | 0; let wallNear = false;
+        for (const [dx, dz] of NB) { const k = (z + dz) * W + (x + dx); if (isB(k) && peri[k] && !door[k]) wallNear = true; }
+        if (!wallNear) continue;
+        const dist = Math.abs(x - dx0) + Math.abs(z - dz0), score = Math.abs(dist - 4);
+        if (score < bd) { bd = score; best = j; }
+      }
+      if (best >= 0) ladder[best] = 1;
+    }
+  }
+  t.peri = peri; t.door = door; t.ladder = ladder; t.hall = hall;
+  // trees (for walking: a trunk and a ball of leaves are solid)
+  const cells = new Set(), key = (lx, y, lz) => (y * PP + (lz + PAD)) * PP + (lx + PAD);
+  for (const tr of t.trees) {
+    const i = (tr.Z + PAD) * PP + tr.X + PAD; if (t.surf[i] === S.WATER) continue;
+    const base = t.ground[i] + 1, th = Math.max(2, tr.H - 2);
+    tr.base = base; tr.th = th;
+    for (let y = 0; y < th; y++) cells.add(key(tr.X, base + y, tr.Z));
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+      if (dx * dx + dy * dy * 1.6 + dz * dz > 5.2 || (dx === 0 && dz === 0 && dy < 1)) continue;
+      const lx = tr.X + dx, lz = tr.Z + dz; if (lx < -PAD || lz < -PAD || lx >= TILE + PAD || lz >= TILE + PAD) continue;
+      cells.add(key(lx, base + th + dy, lz));
+    }
+  }
+  t.treeCells = cells; t.treeKey = key;
+}
+
+// what block is at a place of a square (local x, z from -1 to 500; y up): AIR, GLASS, or a tile number
+function blockIn(t, lx, y, lz) {
+  if (lx < -PAD || lz < -PAD || lx >= TILE + PAD || lz >= TILE + PAD || y < -4) return AIR;
+  const i = (lz + PAD) * PP + lx + PAD, sf = t.surf[i]; if (sf === S.VOID) return AIR;
+  const g = t.ground[i], wh = t.wallH[i], rh = t.roofH[i];
+  if (y <= g) {
+    if (y < 0) return T.STONE;
+    if (wh > 0) return y === g ? T.PLANKS : T.DIRT;
+    return y === g ? (surfTop[sf] ?? T.GRASS) : T.DIRT;
+  }
+  if (wh === 0 || y > g + wh + rh) return AIR;
+  if (y >= g + wh) return roofTile[t.roofM[i]] ?? T.SLATE;
+  const r = y - g - 1;
+  if (t.peri[i]) {
+    if (t.door[i] && r < 2) return AIR;
+    if (windowAt(t.tx * TILE + lx, t.tz * TILE + lz, r, wh)) return GLASS;
+    return wallTile[t.wallM[i]] ?? T.SANDSTONE;
+  }
+  if (t.ladder[i]) return AIR;
+  if (!t.hall[i] && r % 4 === 3) return T.PLANKS;
+  return AIR;
+}
+// the same, for any place in the world (x, z in blocks). Where no square is here yet there is an invisible wall, so nobody falls into the nothing.
+function blockAt(X, y, Z) {
+  const tx = Math.floor(X / TILE), tz = Math.floor(Z / TILE), t = tiles.get(tkey(tx, tz));
+  if (!t) return y <= 330 ? T.STONE : AIR;
+  return blockIn(t, X - tx * TILE, y, Z - tz * TILE);
+}
+function isLadder(X, y, Z) {
+  const tx = Math.floor(X / TILE), tz = Math.floor(Z / TILE), t = tiles.get(tkey(tx, tz)); if (!t) return false;
+  const i = (Z - tz * TILE + PAD) * PP + (X - tx * TILE) + PAD; if (!t.ladder[i]) return false;
+  const g = t.ground[i], wh = t.wallH[i]; return y >= g + 1 && y < g + wh;
+}
+function treeSolid(X, y, Z) {
+  const tx = Math.floor(X / TILE), tz = Math.floor(Z / TILE), t = tiles.get(tkey(tx, tz)); if (!t || !t.treeCells) return false;
+  return t.treeCells.has(t.treeKey(X - tx * TILE, y, Z - tz * TILE));
+}
+function cellAt(X, Z) { // the cell under a place: {t, i} or null
+  const tx = Math.floor(X / TILE), tz = Math.floor(Z / TILE), t = tiles.get(tkey(tx, tz)); if (!t) return null;
+  return {t, i: (Z - tz * TILE + PAD) * PP + (X - tx * TILE) + PAD};
+}
+
+// ---- turning a part of a square into blocks ----
+const e = 0.002;
+// the faces of one chunk (CH x CH blocks) of a square. detailed: the houses are hollow, with their rooms; otherwise they are solid blocks (cheap, for seeing from afar).
+// step 2 draws every second block, twice as wide (for the squares that are far away).
+function gen(t, x0, z0, detailed, step) {
+  const o = {pos: [], uv: [], col: [], gpos: [], guv: [], gcol: []};
+  function face(a, v, tile, shade) { // v: four corners (x,y,z) in order around the face
+    const u0 = (tile % COLS) / COLS + e, v0 = 1 - (Math.floor(tile / COLS) + 1) / ROWS + e, u1 = (tile % COLS + 1) / COLS - e, v1 = 1 - Math.floor(tile / COLS) / ROWS - e;
+    const uvs = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], P = a === 0 ? o.pos : o.gpos, U = a === 0 ? o.uv : o.guv, C = a === 0 ? o.col : o.gcol;
+    for (const k of [0, 1, 2, 0, 2, 3]) { P.push(v[k][0], v[k][1], v[k][2]); U.push(uvs[k][0], uvs[k][1]); C.push(shade, shade, shade); }
+  }
+  const topF = (a, x, y, z, tile, s = 1) => face(a, [[x, y, z + s], [x + s, y, z + s], [x + s, y, z], [x, y, z]], tile, 1);
+  const botF = (a, x, y, z, tile) => face(a, [[x, y, z], [x + 1, y, z], [x + 1, y, z + 1], [x, y, z + 1]], tile, 0.5);
+  const sideF = (a, x, y, z, dir, tile, s = 1) => { // dir 0 north (-z), 1 south (+z), 2 west (-x), 3 east (+x)
+    const y1 = y + 1;
+    if (dir === 0) face(a, [[x + s, y, z], [x, y, z], [x, y1, z], [x + s, y1, z]], tile, 0.82);
+    else if (dir === 1) face(a, [[x, y, z + s], [x + s, y, z + s], [x + s, y1, z + s], [x, y1, z + s]], tile, 0.86);
+    else if (dir === 2) face(a, [[x, y, z], [x, y, z + s], [x, y1, z + s], [x, y1, z]], tile, 0.7);
+    else face(a, [[x + s, y, z + s], [x + s, y, z], [x + s, y1, z], [x + s, y1, z + s]], tile, 0.74);
+  };
+  const idx = (lx, lz) => (Math.max(-PAD, Math.min(TILE + PAD - 1, lz)) + PAD) * PP + Math.max(-PAD, Math.min(TILE + PAD - 1, lx)) + PAD;
+  const topAt = (lx, lz) => t.ground[idx(lx, lz)] + t.wallH[idx(lx, lz)] + t.roofH[idx(lx, lz)] + 1;
+  const DX = [0, 0, -1, 1], DZ = [-1, 1, 0, 0];
+  const s = detailed ? 1 : step;
+  for (let lz = z0; lz < z0 + CH; lz += s) for (let lx = x0; lx < x0 + CH; lx += s) {
+    const i = idx(lx, lz), sf = t.surf[i]; if (sf === S.VOID) continue;
+    const g = t.ground[i], wh = t.wallH[i], rh = t.roofH[i], T0 = g + wh + rh + 1, building = wh > 0, X = lx - x0, Z = lz - z0, WX = t.tx * TILE + lx, WZ = t.tz * TILE + lz;
+    if (building && detailed) {
+      // every block of the house, with a face wherever it touches air (or glass)
+      for (let y = g; y < T0; y++) {
+        const b = blockIn(t, lx, y, lz); if (b === AIR) continue;
+        const a = b === GLASS ? 1 : 0, tile = b === GLASS ? T.GLASS : b;
+        const open = (n) => n === AIR || (a === 0 && n === GLASS);
+        if (open(blockIn(t, lx, y + 1, lz))) topF(a, X, y + 1, Z, tile);
+        if (open(blockIn(t, lx, y - 1, lz)) && y > g) botF(a, X, y, Z, tile);
+        for (let dir = 0; dir < 4; dir++) if (open(blockIn(t, lx + DX[dir], y, lz + DZ[dir]))) sideF(a, X, y, Z, dir, tile);
+      }
+      if (t.ladder[i]) { // the rungs on the wall of the shaft
+        for (let dir = 0; dir < 4; dir++) {
+          const k = idx(lx + DX[dir], lz + DZ[dir]);
+          if (!t.peri[k] || t.door[k]) continue;
+          for (let y = g + 1; y < g + wh; y++) {
+            const off = 0.03;
+            if (dir === 0) face(0, [[X + 1, y, Z + off], [X, y, Z + off], [X, y + 1, Z + off], [X + 1, y + 1, Z + off]], T.LADDER, 0.9);
+            else if (dir === 1) face(0, [[X, y, Z + 1 - off], [X + 1, y, Z + 1 - off], [X + 1, y + 1, Z + 1 - off], [X, y + 1, Z + 1 - off]], T.LADDER, 0.9);
+            else if (dir === 2) face(0, [[X + off, y, Z], [X + off, y, Z + 1], [X + off, y + 1, Z + 1], [X + off, y + 1, Z]], T.LADDER, 0.9);
+            else face(0, [[X + 1 - off, y, Z + 1], [X + 1 - off, y, Z], [X + 1 - off, y + 1, Z], [X + 1 - off, y + 1, Z + 1]], T.LADDER, 0.9);
+          }
+          break;
+        }
+      }
+      continue;
+    }
+    if (building) topF(0, X, T0, Z, roofTile[t.roofM[i]] ?? T.SLATE, s); else topF(0, X, T0, Z, surfTop[sf] ?? T.GRASS, s);
+    for (let dir = 0; dir < 4; dir++) {
+      const nt = topAt(lx + DX[dir] * s, lz + DZ[dir] * s); if (nt >= T0) continue;
+      for (let y = Math.max(nt, -4); y < T0; y++) {
+        let tile;
+        if (building) tile = y < g + wh ? (windowAt(WX, WZ, y - g - 1, wh) ? T.WINDOW : (wallTile[t.wallM[i]] ?? T.SANDSTONE)) : (roofTile[t.roofM[i]] ?? T.SLATE);
+        else if (y < 0) tile = T.STONE;
+        else tile = y === T0 - 1 && sf === S.GRASS ? T.GRASS_SIDE : T.DIRT;
+        sideF(0, X, y, Z, dir, tile, s);
+      }
+    }
+  }
+  // trees: a trunk and a ball of leaves, every cube with all six faces (not for the far squares)
+  if (s === 1) {
+    const cube = (cx, y, cz, tile) => { topF(0, cx, y + 1, cz, tile); botF(0, cx, y, cz, tile); for (let dir = 0; dir < 4; dir++) sideF(0, cx, y, cz, dir, tile); };
+    for (const tr of t.trees) {
+      if (tr.base === undefined || tr.X < x0 || tr.X >= x0 + CH || tr.Z < z0 || tr.Z >= z0 + CH) continue;
+      const TX = tr.X - x0, TZ = tr.Z - z0;
+      for (let y = 0; y < tr.th; y++) cube(TX, tr.base + y, TZ, T.LOG);
+      const cy = tr.base + tr.th;
+      for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+        if (dx * dx + dy * dy * 1.6 + dz * dz > 5.2 || (dx === 0 && dz === 0 && dy < 1)) continue;
+        cube(TX + dx, cy + dy, TZ + dz, T.LEAVES);
+      }
+    }
+  }
+  return o;
+}
+
+function meshOf(o, mat, glassMat, parent, ox, oz) {
+  const out = [];
+  const mk = (P, U, C, m) => {
+    if (!P.length) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(P), 3));
+    geo.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(U), 2));
+    geo.setAttribute("color", new THREE.BufferAttribute(new Float32Array(C), 3));
+    geo.computeBoundingSphere();
+    const me = new THREE.Mesh(geo, m); if (m === glassMat) me.renderOrder = 2;
+    me.position.set(ox, 0, oz);
+    parent.add(me); out.push(me);
+  };
+  mk(o.pos, o.uv, o.col, mat); mk(o.gpos, o.guv, o.gcol, glassMat);
+  return out;
+}
+function drop(meshes, parent) { for (const m of meshes) { parent.remove(m); m.geometry.dispose(); } }
+
+// ---- the view ----
+async function main() {
+  if (typeof DecompressionStream === "undefined") throw new Error("This browser is too old to open the map (it needs DecompressionStream).");
+  const canvas = $("c");
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({canvas, antialias: false}); } catch (err) { throw new Error("This browser cannot draw 3D (WebGL is off)."); }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 9000);
+  const tex = atlas();
+  const mat = new THREE.MeshBasicMaterial({map: tex, vertexColors: true, side: THREE.DoubleSide, alphaTest: 0.5});
+  const glassMat = new THREE.MeshBasicMaterial({map: tex, vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.42, depthWrite: false});
+  const group = new THREE.Group(); scene.add(group);
+
+  // ---- orbit camera: a point it looks at, a distance, two angles ----
+  const home = {tx: -80, ty: 30, tz: -60, dist: 520, yaw: 0.35, pitch: 0.75};
+  const cam = Object.assign({}, home);
+  function place() {
+    const cp = Math.cos(cam.pitch);
+    camera.position.set(cam.tx + Math.sin(cam.yaw) * cp * cam.dist, cam.ty + Math.sin(cam.pitch) * cam.dist, cam.tz + Math.cos(cam.yaw) * cp * cam.dist);
+    camera.lookAt(cam.tx, cam.ty, cam.tz);
+  }
+  let drag = null, pan = false, walking = false;
+  canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  canvas.addEventListener("pointerdown", (ev) => { if (walking) return; drag = {x: ev.clientX, y: ev.clientY}; pan = ev.button === 2 || ev.shiftKey; canvas.setPointerCapture(ev.pointerId); });
+  canvas.addEventListener("pointerup", () => { drag = null; });
+  canvas.addEventListener("pointermove", (ev) => {
+    if (!drag || walking) return;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y; drag = {x: ev.clientX, y: ev.clientY};
+    if (pan) { const k = cam.dist * 0.0016; cam.tx -= (Math.cos(cam.yaw) * dx + Math.sin(cam.yaw) * dy) * k; cam.tz -= (-Math.sin(cam.yaw) * dx + Math.cos(cam.yaw) * dy) * k; }
+    else { cam.yaw -= dx * 0.006; cam.pitch = Math.max(0.05, Math.min(1.5, cam.pitch + dy * 0.005)); }
+  });
+  canvas.addEventListener("wheel", (ev) => { if (walking) return; ev.preventDefault(); cam.dist = Math.max(8, Math.min(2400, cam.dist * Math.exp(ev.deltaY * 0.0012))); }, {passive: false});
+  const touches = new Map(); let pinch0 = 0;
+  canvas.addEventListener("pointerdown", (ev) => { touches.set(ev.pointerId, ev); if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch0 = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); drag = null; } });
+  canvas.addEventListener("pointermove", (ev) => { if (!touches.has(ev.pointerId) || walking) return; touches.set(ev.pointerId, ev); if (touches.size === 2) { const [a, b] = [...touches.values()], n = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); if (pinch0 > 0) cam.dist = Math.max(8, Math.min(2400, cam.dist * pinch0 / n)); pinch0 = n; } });
+  const lift = (ev) => { touches.delete(ev.pointerId); pinch0 = 0; };
+  canvas.addEventListener("pointerup", lift); canvas.addEventListener("pointercancel", lift);
+  const keys = new Set();
+  addEventListener("keydown", (ev) => { keys.add(ev.key.toLowerCase()); if (walking && [" ", "arrowup", "arrowdown"].includes(ev.key.toLowerCase())) ev.preventDefault(); });
+  addEventListener("keyup", (ev) => keys.delete(ev.key.toLowerCase()));
+  $("reset").onclick = () => { if (walking) stopWalk(); Object.assign(cam, home); placeAt = null; };
+  $("top").onclick = () => { if (walking) stopWalk(); cam.pitch = 1.5; cam.yaw = 0; cam.dist = Math.max(cam.dist, 640); };
+
+  // the time of day: the light on every block and the colour of the sky
+  const day = new THREE.Color(0x8fc4ff), night = new THREE.Color(0x070b18);
+  function tod() { const t = $("tod").value / 100, f = 0.32 + 0.68 * t; for (const m of [mat, glassMat]) { m.color.setScalar(f); m.color.r *= 0.9 + 0.1 * t; } scene.background = night.clone().lerp(day, t); }
+  // fog in the colour of the sky: far squares fade in instead of appearing out of nothing (its distance follows the view, see frameBody)
+  scene.fog = new THREE.Fog(0x8fc4ff, 100, 900);
+  const baseTod = tod;
+  tod = function () { baseTod(); scene.fog.color.copy(scene.background); };
+  $("tod").oninput = tod; tod();
+
+  // places to jump to (the world has its zero at St. Peter's; the same flat mapping as the position shown below)
+  const PLACES = [["Vatican City", 41.9029, 12.4534], ["Berlin, Brandenburg Gate", 52.5163, 13.3777], ["Paris, Eiffel Tower", 48.8584, 2.2945], ["London, Big Ben", 51.5007, -0.1246],
+    ["Amsterdam, canals", 52.3676, 4.9041], ["New York, Times Square", 40.758, -73.9855], ["Dubai, Burj Khalifa", 25.1972, 55.2744], ["Tokyo, Shibuya", 35.6595, 139.7005],
+    ["Sydney, Opera House", -33.8568, 151.2153], ["Rio, Copacabana", -22.9711, -43.1822], ["Cairo, Giza", 29.9792, 31.1342], ["Matterhorn", 45.9763, 7.6586], ["Venice", 45.4341, 12.3388]];
+  const sel = $("place");
+  PLACES.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p[0]; sel.appendChild(o); });
+  let placeAt = null;
+  sel.onchange = () => {
+    const p = PLACES[sel.value]; sel.value = ""; if (!p) return;
+    if (walking) { stopWalk(); $("walk").textContent = "Walk around"; }
+    const x = (p[2] - 12.4534) * 111320 * Math.cos(41.9029 * Math.PI / 180), z = -(p[1] - 41.9029) * 110540;
+    cam.tx = x; cam.tz = z; cam.ty = 30; cam.dist = 420; cam.pitch = 0.7; placeAt = {x, z, name: p[0]};
+    $("name").textContent = p[0] + ", in blocks";
+  };
+
+  // ---- landmarks: models of famous buildings (landmarks/index.txt and one landmarks/<id>.lm.gz each, made by tools/landmarkvox, the same files as in the game) ----
+  // Only the index is read at the start; a model is fetched when you are near it. A landmark replaces the houses of the map around it (a box of the map
+  // under a tower would be inside it) and is drawn as one block per metre.
+  const LM = [];
+  const lmReady = (async () => {
+    try {
+      const txt = await (await fetch("landmarks/index.txt")).text();
+      for (const line of txt.split("\n")) {
+        const p = line.split("\t"); if (p.length < 12) continue;
+        const ax = Math.floor((+p[2] - 12.4534) * 111320 * Math.cos(41.9029 * Math.PI / 180)), az = Math.floor(-(+p[3] - 41.9029) * 110540);
+        LM.push({id: p[0], name: p[1], ax, az, minX: ax + (+p[4]) - 2, maxX: ax + (+p[5]) + 2, minZ: az + (+p[6]) - 2, maxZ: az + (+p[7]) + 2, file: p[10], elev: +p[9], state: 0, mesh: null});
+      }
+    } catch (err) { console.warn("landmarks:", err); }
+  })();
+  let lmLoading = 0;
+  function clearLandmarkBoxes(t) { // the houses of the map inside the area of a landmark are taken out of the square
+    for (const l of LM) {
+      const lx0 = Math.max(-PAD, l.minX - t.tx * TILE), lx1 = Math.min(TILE + PAD - 1, l.maxX - t.tx * TILE);
+      const lz0 = Math.max(-PAD, l.minZ - t.tz * TILE), lz1 = Math.min(TILE + PAD - 1, l.maxZ - t.tz * TILE);
+      for (let lz = lz0; lz <= lz1; lz++) for (let lx = lx0; lx <= lx1; lx++) { const i = (lz + PAD) * PP + lx + PAD; t.wallH[i] = 0; t.roofH[i] = 0; }
+    }
+  }
+  async function loadLandmark(l, base) { // the file of a model: gzip of text, "x y z rrggbb" per block; every block is a cube (one instanced mesh)
+    try {
+      const r = await fetch("landmarks/" + l.file); if (!r.ok) throw new Error(r.status);
+      const lines = (await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).text()).split("\n"), n = parseInt(lines[0], 10);
+      const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial(), n);
+      const m = new THREE.Matrix4(), col = new THREE.Color();
+      for (let i = 0; i < n; i++) {
+        const p = lines[1 + i].split(" "), x = +p[0], y = +p[1], z = +p[2];
+        m.makeTranslation(l.ax + x + 0.5, base + y + 0.5, l.az + z + 0.5); mesh.setMatrixAt(i, m);
+        const k = 0.82 + 0.18 * (((x * 7 + y * 3 + z * 5) & 7) / 7); // a little different from block to block, so that the shape can be seen
+        col.setHex(parseInt(p[3], 16)).multiplyScalar(k); mesh.setColorAt(i, col);
+      }
+      mesh.frustumCulled = false; group.add(mesh); l.mesh = mesh; l.state = 2;
+    } catch (err) { console.warn("landmark " + l.id + ":", err); l.state = 3; }
+    lmLoading--;
+  }
+  function buildLandmarks() { // near the place we look at, and when the square of its middle is here: fetched and drawn on the ground there; far away: dropped
+    const [fx, fz] = focus();
+    for (const l of LM) {
+      const d = Math.hypot(l.ax - fx, l.az - fz);
+      if (l.state === 2 && d > 2200) { group.remove(l.mesh); l.mesh.dispose(); l.mesh = null; l.state = 0; continue; }
+      if (l.state !== 0 || d > 900 || lmLoading >= 2) continue;
+      const c = cellAt(l.ax, l.az); if (!c) continue;
+      l.state = 1; lmLoading++;
+      loadLandmark(l, c.t.ground[c.i] + 1 + l.elev);
+    }
+  }
+
+  // ---- the squares: asking the server for the ones around the place we look at ----
+  // the work of making blocks is cut into small jobs and done a few milliseconds per frame
+  const jobs = []; let jobsDirty = false;
+  const queued = new Set();
+  function queueJob(t, cx, cz, detailed, step, prio) {
+    const k = tkey(t.tx, t.tz) + "/" + cx + "," + cz + (detailed ? "d" : "e") + step;
+    if (queued.has(k)) return; queued.add(k);
+    jobs.push({k, t, cx, cz, detailed, step, prio}); jobsDirty = true;
+  }
+  const chunkOrigin = (t, cx, cz) => [t.tx * TILE + cx * CH, t.tz * TILE + cz * CH];
+  function runJobs(budget) {
+    if (!jobs.length) return;
+    if (jobsDirty) { jobs.sort((a, b) => a.prio - b.prio); jobsDirty = false; }
+    const t0 = performance.now();
+    while (jobs.length && performance.now() - t0 < budget) {
+      const j = jobs.shift(); queued.delete(j.k);
+      if (tiles.get(tkey(j.t.tx, j.t.tz)) !== j.t) continue;           // the square is gone
+      const ck = j.cx + "," + j.cz, [wx, wz] = chunkOrigin(j.t, j.cx, j.cz);
+      if (j.detailed) {
+        if (j.t.det.has(ck)) continue;
+        j.t.det.set(ck, meshOf(gen(j.t, j.cx * CH, j.cz * CH, true, 1), mat, glassMat, group, wx, wz));
+        for (const m of j.t.ext.get(ck) || []) m.visible = false;
+      } else {
+        const old = j.t.ext.get(ck); if (old) drop(old, group);
+        const ms = meshOf(gen(j.t, j.cx * CH, j.cz * CH, false, j.step), mat, glassMat, group, wx, wz);
+        if (j.t.det.has(ck)) for (const m of ms) m.visible = false;
+        j.t.ext.set(ck, ms);
+      }
+    }
+  }
+  async function loadTile(tx, tz) {
+    const k = tkey(tx, tz); if (tiles.has(k) || pending.has(k)) return;
+    pending.add(k);
+    try {
+      const r = await fetch("/tiles/3d/load", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({x: tx, z: tz})});
+      if (r.status === 429) { retryAt = performance.now() + 7000; netMsg = "A lot of new squares at once. Waiting a moment…"; netWarn = true; return; }
+      if (r.status === 507) { retryAt = performance.now() + 60000; netMsg = "The server has no room for more squares right now."; netWarn = true; return; }
+      if (!r.ok) throw new Error(await r.text());
+      const buf = await new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+      await lmReady;
+      const t = parseTile(buf); clearLandmarkBoxes(t); prepare(t);
+      tiles.set(k, t); netWarn = false; netMsg = "";
+    } catch (err) {
+      retryAt = performance.now() + 8000; netMsg = "A square did not load (" + String(err.message || err).slice(0, 80).replace(/[<>&]/g, "") + "). Trying again…"; netWarn = true;
+    } finally { pending.delete(k); }
+  }
+  let focusTile = [0, 0];
+  const focus = () => walking ? [P.x, P.z] : [cam.tx, cam.tz];
+  function stream() {
+    buildLandmarks();
+    const [fx, fz] = focus(), ftx = Math.floor(fx / TILE), ftz = Math.floor(fz / TILE);
+    focusTile = [ftx, ftz];
+    const R = walking ? 1 : (cam.dist > 1100 ? 2 : 1);
+    const want = [];
+    for (let dz = -R; dz <= R; dz++) for (let dx = -R; dx <= R; dx++) want.push([ftx + dx, ftz + dz, Math.hypot(fx - ((ftx + dx + 0.5) * TILE), fz - ((ftz + dz + 0.5) * TILE))]);
+    want.sort((a, b) => a[2] - b[2]);
+    if (performance.now() >= retryAt) {
+      let n = pending.size;
+      for (const [x, z] of want) { if (n >= 3) break; if (!tiles.has(tkey(x, z)) && !pending.has(tkey(x, z))) { loadTile(x, z); n++; } }
+    }
+    // the blocks of every piece (50 x 50): sharp near the place we look at, coarse and cheap farther away (with a margin, so they do not flicker)
+    for (const [x, z] of want) {
+      const t = tiles.get(tkey(x, z)); if (!t) continue;
+      if (!t.cstep) t.cstep = new Map();
+      t.step = 1;
+      for (let cz = 0; cz < NCH; cz++) for (let cx = 0; cx < NCH; cx++) {
+        const ck = cx + "," + cz, d = Math.hypot(t.tx * TILE + (cx + 0.5) * CH - fx, t.tz * TILE + (cz + 0.5) * CH - fz), cur = t.cstep.get(ck);
+        const need = cur === 1 ? (d < 340 ? 1 : 2) : cur === 2 ? (d < 220 ? 1 : 2) : (d < 260 ? 1 : 2);
+        if (cur !== need) { t.cstep.set(ck, need); queueJob(t, cx, cz, false, need, d); }
+      }
+    }
+    // squares that are far away are forgotten
+    for (const [k, t] of tiles) {
+      if (Math.max(Math.abs(t.tx - ftx), Math.abs(t.tz - ftz)) > R + 2) {
+        for (const ms of t.ext.values()) drop(ms, group);
+        for (const ms of t.det.values()) drop(ms, group);
+        tiles.delete(k);
+      }
+    }
+    const waiting = pending.size;
+    const el = $("net");
+    if (waiting) { el.textContent = "Loading " + waiting + (waiting === 1 ? " square…" : " squares…"); el.className = "glass on"; }
+    else if (netMsg) { el.textContent = netMsg; el.className = "glass on" + (netWarn ? " warn" : ""); }
+    else el.className = "glass";
+  }
+  setInterval(stream, 400);
+
+  // ---- walking: a person 0.6 blocks wide and 1.8 tall who cannot go through blocks ----
+  const R = 0.3, HGT = 1.8, EYE = 1.62;
+  const P = {x: -80, y: 0, z: -60, vy: 0, yaw: 0, pitch: 0, ground: false};
+  const solid = (x, y, z) => blockAt(x, y, z) !== AIR || treeSolid(x, y, z);
+  const hits = (px, py, pz) => {
+    const x0 = Math.floor(px - R), x1 = Math.floor(px + R), z0 = Math.floor(pz - R), z1 = Math.floor(pz + R), y0 = Math.floor(py), y1 = Math.floor(py + HGT - 1e-4);
+    for (let y = y0; y <= y1; y++) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) if (solid(x, y, z)) return true;
+    return false;
+  };
+  function spawn() {
+    // the nearest plaza or street to where the camera looks, outside any house
+    const cx0 = Math.floor(cam.tx), cz0 = Math.floor(cam.tz);
+    let best = null, bd = 1e9;
+    for (let r = 0; r < 300 && !best; r += 1) {
+      for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+        const x = cx0 + dx, z = cz0 + dz, c = cellAt(x, z); if (!c) continue;
+        const s = c.t.surf[c.i];
+        if (c.t.wallH[c.i] === 0 && (s === S.PLAZA || s === S.GRAVEL || s === S.ASPHALT) && r < bd) { best = [x, z, c.t.ground[c.i]]; bd = r; break; }
+      }
+    }
+    if (!best) { const c = cellAt(cx0, cz0); best = [cx0, cz0, c ? c.t.ground[c.i] : 30]; }
+    P.x = best[0] + 0.5; P.z = best[1] + 0.5; P.y = best[2] + 1; P.vy = 0; P.yaw = cam.yaw + Math.PI; P.pitch = -0.1;
+  }
+  let want = [], lastKey = "";
+  function updateChunks() {
+    const pcx = Math.floor(P.x / CH), pcz = Math.floor(P.z / CH);
+    if (pcx + "," + pcz !== lastKey) {
+      lastKey = pcx + "," + pcz; want = [];
+      for (let cz = pcz - 3; cz <= pcz + 3; cz++) for (let cx = pcx - 3; cx <= pcx + 3; cx++) {
+        const tx = Math.floor(cx * CH / TILE), tz = Math.floor(cz * CH / TILE), t = tiles.get(tkey(tx, tz)); if (!t) continue;
+        const lcx = cx - tx * NCH, lcz = cz - tz * NCH, dd = Math.hypot((cx + 0.5) * CH - P.x, (cz + 0.5) * CH - P.z);
+        if (dd < 95) want.push([dd, t, lcx, lcz]);
+      }
+      for (const [, t, lcx, lcz] of want) queueJob(t, lcx, lcz, true, 1, 0);
+      // chunks that are far away go back to the cheap solid look
+      for (const t of tiles.values()) for (const [k, ms] of t.det) {
+        const [lcx, lcz] = k.split(",").map(Number);
+        if (Math.hypot((t.tx * TILE + (lcx + 0.5) * CH) - P.x, (t.tz * TILE + (lcz + 0.5) * CH) - P.z) > 140) { drop(ms, group); t.det.delete(k); for (const m of t.ext.get(k) || []) m.visible = true; }
+      }
+    }
+  }
+  function startWalk() {
+    if (walking) return; walking = true; document.body.classList.add("walk", "unlocked");
+    spawn(); lastKey = ""; want = [];
+    updateChunks(); runJobs(40);
+    canvas.requestPointerLock && canvas.requestPointerLock();
+  }
+  function stopWalk() {
+    if (!walking) return; walking = false; document.body.classList.remove("walk", "unlocked");
+    if (document.pointerLockElement) document.exitPointerLock();
+    for (const t of tiles.values()) { for (const [k, ms] of t.det) { drop(ms, group); for (const m of t.ext.get(k) || []) m.visible = true; } t.det.clear(); }
+    cam.tx = P.x; cam.tz = P.z; cam.ty = P.y; cam.dist = 120; cam.pitch = 0.9;
+  }
+  $("walk").onclick = () => { if (walking) stopWalk(); else startWalk(); $("walk").textContent = walking ? "Stop walking" : "Walk around"; };
+  addEventListener("keydown", (ev) => { if (ev.key === "Escape" && walking && !document.pointerLockElement) { stopWalk(); $("walk").textContent = "Walk around"; } });
+  document.addEventListener("pointerlockchange", () => { document.body.classList.toggle("unlocked", walking && !document.pointerLockElement); });
+  canvas.addEventListener("click", () => { if (walking && !document.pointerLockElement && canvas.requestPointerLock) canvas.requestPointerLock(); });
+  document.addEventListener("mousemove", (ev) => { if (!walking || !document.pointerLockElement) return; P.yaw -= ev.movementX * 0.0023; P.pitch = Math.max(-1.5, Math.min(1.5, P.pitch - ev.movementY * 0.0023)); });
+
+  function physics(dt) {
+    const fwd = (keys.has("w") || keys.has("arrowup") ? 1 : 0) - (keys.has("s") || keys.has("arrowdown") ? 1 : 0), rt = (keys.has("d") || keys.has("arrowright") ? 1 : 0) - (keys.has("a") || keys.has("arrowleft") ? 1 : 0);
+    const ladder = isLadder(Math.floor(P.x), Math.floor(P.y + 0.9), Math.floor(P.z));
+    const speed = ladder ? 1.6 : keys.has("shift") ? 5.8 : 4.3;
+    let mx = (-Math.sin(P.yaw) * fwd + Math.cos(P.yaw) * rt), mz = (-Math.cos(P.yaw) * fwd - Math.sin(P.yaw) * rt);
+    const ml = Math.hypot(mx, mz); if (ml > 0) { mx = mx / ml * speed * dt; mz = mz / ml * speed * dt; }
+    const step = (dx, dz) => { // one axis at a time, so you slide along a wall; a step of one block is climbed like a stair
+      if (dx) { P.x += dx; if (hits(P.x, P.y, P.z)) { if (P.ground && !hits(P.x, P.y + 1.001, P.z)) P.y += 1.001; else P.x -= dx; } }
+      if (dz) { P.z += dz; if (hits(P.x, P.y, P.z)) { if (P.ground && !hits(P.x, P.y + 1.001, P.z)) P.y += 1.001; else P.z -= dz; } }
+    };
+    step(mx, 0); step(0, mz);
+    if (ladder) {
+      P.vy = keys.has(" ") ? 3.4 : keys.has("shift") ? -3.4 : 0;
+    } else {
+      P.vy = Math.max(-40, P.vy - 26 * dt);
+      if (P.ground && keys.has(" ")) P.vy = 8.2;
+    }
+    P.y += P.vy * dt;
+    if (hits(P.x, P.y, P.z)) {
+      if (P.vy <= 0) { P.y = Math.floor(P.y) + 1; if (hits(P.x, P.y, P.z)) P.y -= 1; }
+      else P.y = Math.ceil(P.y + HGT) - HGT - 0.001;
+      P.vy = 0;
+    }
+    P.ground = hits(P.x, P.y - 0.02, P.z);
+    if (P.y < -8) spawn(); // fell out of the world
+  }
+
+  function size() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  addEventListener("resize", size); size();
+  let last = performance.now(), shown = false, lastPos = 0;
+  const t0load = performance.now();
+  stream();
+  // one mistake in a frame must not stop the page: the error is shown and the next frame is drawn
+  function frame(now) {
+    try { frameBody(now); } catch (err) { console.error(err); const l = $("lmsg"); if (l && !shown) l.textContent = "Error: " + String(err.message || err).slice(0, 140).replace(/[<>&]/g, ""); }
+    requestAnimationFrame(frame);
+  }
+  function frameBody(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (walking) {
+      if (document.pointerLockElement) { const n = Math.ceil(dt / 0.02); for (let i = 0; i < n; i++) physics(dt / n); }
+      updateChunks();
+      camera.position.set(P.x, P.y + EYE, P.z); camera.rotation.set(P.pitch, P.yaw, 0, "YXZ");
+    } else {
+      const v = cam.dist * 0.9 * dt;
+      let mx = 0, mz = 0;
+      if (keys.has("arrowleft") || keys.has("a")) mx -= 1; if (keys.has("arrowright") || keys.has("d")) mx += 1;
+      if (keys.has("arrowup") || keys.has("w")) mz -= 1; if (keys.has("arrowdown") || keys.has("s")) mz += 1;
+      if (mx || mz) { cam.tx += (Math.cos(cam.yaw) * mx - Math.sin(cam.yaw) * mz) * v; cam.tz += (-Math.sin(cam.yaw) * mx - Math.cos(cam.yaw) * mz) * v; }
+      // the ground height under the place we look at, so that the camera follows the hills
+      const c = cellAt(Math.floor(cam.tx), Math.floor(cam.tz)); if (c) cam.ty += (c.t.ground[c.i] - cam.ty) * Math.min(1, dt * 3);
+      place();
+    }
+    if (walking) { scene.fog.near = 90; scene.fog.far = 560; } else { scene.fog.near = cam.dist * 1.4; scene.fog.far = cam.dist * 5 + 1200; }
+    runJobs(!shown ? 28 : walking ? 9 : 7);
+    if (now - lastPos > 500) {
+      lastPos = now;
+      const x = walking ? P.x : cam.tx, z = walking ? P.z : cam.tz;
+      $("pos").textContent = "x " + Math.round(x) + " · z " + Math.round(z) + " (blocks from St. Peter's)";
+      const lat = 41.9029 - z / 110540, lon = 12.4534 + x / (111320 * Math.cos(41.9029 * Math.PI / 180));
+      $("name").textContent = placeAt && Math.hypot(x - placeAt.x, z - placeAt.z) < 1500 ? placeAt.name + ", in blocks" : Math.abs(x) < 700 && Math.abs(z) < 700 ? "Vatican City, in blocks" : "The world, in blocks";
+      $("pos").title = lat.toFixed(5) + ", " + lon.toFixed(5);
+    }
+    renderer.render(scene, camera);
+    if (!shown) { // the page opens as soon as the first pieces around the camera are there
+      let built = 0; for (const t of tiles.values()) built = Math.max(built, t.ext.size);
+      say(netMsg && !tiles.size ? netMsg : pending.size && !tiles.size ? "Asking the server for the first squares (" + pending.size + ")" : tiles.size ? "Building the blocks… " + jobs.length + " pieces to go" : "Asking the server for the first squares");
+      if (built >= 8 || (tiles.size > 0 && now - t0load > 12000)) { shown = true; $("load").classList.add("gone"); }
+    }
+  }
+  requestAnimationFrame(frame);
+}
+main().catch((err) => { $("load").classList.remove("gone"); $("load").innerHTML = "<div><b>It did not open</b><span>" + String(err.message || err).replace(/[<>&]/g, "") + "</span></div>"; console.error(err); });
+</script>
+</body>
+</html>

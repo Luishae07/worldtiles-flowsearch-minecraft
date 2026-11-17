@@ -1,0 +1,97 @@
+name: WorldTiles
+main: org.flowsearch.worldtiles.WorldTiles
+version: 1.1.0
+api-version: "26.3"
+load: STARTUP
+description: The world in blocks, made from the tile service of minecraft.flowsearch.org
+author: Flowsearch
+commands:
+  tpll:
+    description: Teleport to a latitude and longitude on the real Earth
+    usage: /tpll <latitude> <longitude>
+  go:
+    description: Teleport to a place by its name (for example the Eiffel Tower)
+    usage: /go <place name>
+  where:
+    description: Where you are on the real Earth
+    usage: /where
+  spawn:
+    description: Back to St. Peter's Square
+    usage: /spawn
+  flights:
+    description: The real flights in the sky near you
+    usage: /flights
+  ride:
+    description: Fly beside a real flight (a callsign like DLH400, or nearest); /ride exit to leave
+    usage: /ride <callsign | nearest | exit>
+  car:
+    description: Drive a car on the real streets (roads are fast); /car again or Shift to get out
+    usage: /car
+  job:
+    description: In your car, take a passenger to a street (taxi job); /job again for another one, /job stop to cancel
+    usage: /job [stop]
+  near:
+    description: Real shops (with opening hours) and transport stops near you; also shown as labels in the world
+    usage: /near [open|stops]
+  train:
+    description: Real Berlin trains on the real timetable - next departures at the stop near you, board a train next to you
+    usage: /train [board [line] | drive [line] | exit]
+  shop:
+    description: Buy the real shop next to you; it earns coins while it is really open
+    usage: /shop [buy | upgrade | hire | fire | collect | list]
+  work:
+    description: Work a 4 minute shift at the real restaurant, cafe or bar next to you (serve villager customers); /work stop to end
+    usage: /work [stop]
+  licence:
+    description: Licences for the well paid jobs (train driver)
+    usage: /licence [buy train]
+    aliases: [license]
+  hotel:
+    description: Rent a furnished room in the real hotel next to you (1, 6 or 24 hours)
+    usage: /hotel [rent 1|6|24 | room | leave | checkout]
+  football:
+    description: Real football fixtures (big leagues) - villagers play them at the real stadium at the real kick-off time
+    usage: /football [go <number>]
+  house:
+    description: Buy the real building you stand next to (tiny to huge), live in it, earn rent, open a shop in it, or run a data center
+    usage: /house [buy | home [n] | list | collect | sell | furnish [piece | clear] | tenants | hire | fire | shop <type> <name> | shop close | rack [n] | cooling | datacenter]
+  buy:
+    description: Buy food or goods in the real shop or restaurant next to you (/buy shows the menu)
+    usage: /buy [item] [how many]
+  drone:
+    description: Fly a camera drone (10 minute battery, 400 block range); your body stays; /drone again lands it
+    usage: /drone [speed 1-10]
+  credits:
+    description: Where the data of this world comes from
+    usage: /credits
+  money:
+    description: How many coins you have
+    usage: /money
+  skydive:
+    description: Jump from 1500 m above where you stand and land on the circle
+    usage: /skydive [top|stop]
+  plane:
+    description: Fly a plane (cessna, a320, b747, learjet); /plane again to get out
+    usage: /plane [cessna|a320|b747|learjet]
+  moon:
+    description: Go to the Moon (a place like apollo 11, or a latitude and longitude)
+    usage: /moon [place | latitude longitude]
+  earth:
+    description: Back from the Moon to St. Peter's Square
+    usage: /earth
+  realweather:
+    description: Turn the real weather and real time of day (at the place you are) on or off
+    usage: /realweather
+  fly:
+    description: Turn flying on or off, or set the flying speed
+    usage: /fly [1-10]
+  tp:
+    description: /tp datacenter goes to the nearest data center; anything else is the normal /tp
+    usage: /tp datacenter
+  datacenter:
+    description: Go to the nearest data center
+    usage: /datacenter
+  worldmap:
+    description: A map item that shows the real map around you
+    usage: /worldmap [1-4]
+    aliases: [map]
