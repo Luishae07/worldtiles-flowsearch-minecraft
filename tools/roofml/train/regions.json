@@ -1,0 +1,152 @@
+[
+ {
+  "name": "potsdam",
+  "bbox": "13.0475,52.3915,13.0725,52.4085",
+  "test": false
+ },
+ {
+  "name": "brandenburg-havel",
+  "bbox": "12.5475,52.4015,12.5725,52.4185",
+  "test": false
+ },
+ {
+  "name": "cottbus",
+  "bbox": "14.3175,51.7515,14.3425,51.7685",
+  "test": true
+ },
+ {
+  "name": "frankfurt-oder",
+  "bbox": "14.5375,52.3415,14.5625,52.3585",
+  "test": false
+ },
+ {
+  "name": "eberswalde",
+  "bbox": "13.7975,52.8215,13.8225,52.8385",
+  "test": false
+ },
+ {
+  "name": "oranienburg",
+  "bbox": "13.2275,52.7415,13.2525,52.7585",
+  "test": false
+ },
+ {
+  "name": "fuerstenwalde",
+  "bbox": "14.0475,52.3515,14.0725,52.3685",
+  "test": false
+ },
+ {
+  "name": "neuruppin",
+  "bbox": "12.7875,52.9215,12.8125,52.9385",
+  "test": true
+ },
+ {
+  "name": "koenigs-wusterhausen",
+  "bbox": "13.6175,52.2915,13.6425,52.3085",
+  "test": false
+ },
+ {
+  "name": "zeesen",
+  "bbox": "13.6175,52.2565,13.6425,52.2735",
+  "test": false
+ },
+ {
+  "name": "strausberg",
+  "bbox": "13.8675,52.5715,13.8925,52.5885",
+  "test": false
+ },
+ {
+  "name": "bernau",
+  "bbox": "13.5775,52.6715,13.6025,52.6885",
+  "test": false
+ },
+ {
+  "name": "falkensee",
+  "bbox": "13.0775,52.5515,13.1025,52.5685",
+  "test": false
+ },
+ {
+  "name": "teltow",
+  "bbox": "13.2575,52.3915,13.2825,52.4085",
+  "test": false
+ },
+ {
+  "name": "luckenwalde",
+  "bbox": "13.1575,52.0815,13.1825,52.0985",
+  "test": false
+ },
+ {
+  "name": "senftenberg",
+  "bbox": "13.9875,51.5115,14.0125,51.5285",
+  "test": false
+ },
+ {
+  "name": "schwedt",
+  "bbox": "14.2675,53.0515,14.2925,53.0685",
+  "test": true
+ },
+ {
+  "name": "prenzlau",
+  "bbox": "13.8475,53.3065,13.8725,53.3235",
+  "test": false
+ },
+ {
+  "name": "wittenberge",
+  "bbox": "11.7375,52.9815,11.7625,52.9985",
+  "test": false
+ },
+ {
+  "name": "rathenow",
+  "bbox": "12.3275,52.5915,12.3525,52.6085",
+  "test": false
+ },
+ {
+  "name": "guben",
+  "bbox": "14.7075,51.9415,14.7325,51.9585",
+  "test": false
+ },
+ {
+  "name": "eisenhuettenstadt",
+  "bbox": "14.6375,52.1415,14.6625,52.1585",
+  "test": false
+ },
+ {
+  "name": "berlin-spandau",
+  "bbox": "13.1875,52.5275,13.2125,52.5445",
+  "test": false
+ },
+ {
+  "name": "berlin-marzahn",
+  "bbox": "13.5575,52.5315,13.5825,52.5485",
+  "test": false
+ },
+ {
+  "name": "berlin-neukoelln",
+  "bbox": "13.4275,52.4615,13.4525,52.4785",
+  "test": false
+ },
+ {
+  "name": "berlin-reinickendorf",
+  "bbox": "13.3175,52.5815,13.3425,52.5985",
+  "test": false
+ },
+ {
+  "name": "berlin-koepenick",
+  "bbox": "13.5675,52.4415,13.5925,52.4585",
+  "test": false
+ },
+ {
+  "name": "berlin-zehlendorf",
+  "bbox": "13.2475,52.4215,13.2725,52.4385",
+  "test": false
+ },
+ {
+  "name": "berlin-mitte",
+  "bbox": "13.3875,52.5115,13.4125,52.5285",
+  "test": true
+ },
+ {
+  "name": "berlin-pankow",
+  "bbox": "13.3975,52.5615,13.4225,52.5785",
+  "test": false
+ }
+]

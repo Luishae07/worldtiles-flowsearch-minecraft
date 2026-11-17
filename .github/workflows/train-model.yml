@@ -1,0 +1,82 @@
+name: Train the roof and height network
+
+# Collects crops of the satellite picture of the buildings of many towns of Brandenburg and Berlin (where the city models say what each building really is),
+# trains a small neural network on them on the CPU, tests it on towns that it has not seen, and puts the model and the report in a release.
+# Press "Run workflow". For a first test use few towns and one or two epochs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      towns:
+        description: "how many towns of the list (0 = all)"
+        default: "3"
+      epochs:
+        description: "epochs of the training"
+        default: "2"
+      max_buildings:
+        description: "at most this many buildings for the learning (0 = all)"
+        default: "0"
+      release:
+        description: "the tag of the release that gets the model"
+        default: "model-test"
+
+permissions:
+  contents: write
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare
+        run: |
+          sudo mkdir -p /media/data && sudo chown "$USER" /media/data
+          pip install numpy
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          cd tools/mctiles
+          go build -o "$GITHUB_WORKSPACE/mctiles" main.go roofdata.go roofmodel.go backfill.go cropdata.go
+          cp roofmodel.json overture_parts.py "$GITHUB_WORKSPACE/"
+      - name: Collect the crops of the towns
+        run: |
+          set -e
+          n="${{ inputs.towns }}"
+          jq -c 'if '"$n"' > 0 then .[0:'"$n"'] + [.[] | select(.test)][0:2] else . end | unique_by(.name) | .[]' tools/roofml/train/regions.json > towns.jsonl
+          mkdir crops
+          cat towns.jsonl | while read -r t; do
+            name=$(echo "$t" | jq -r .name); bbox=$(echo "$t" | jq -r .bbox)
+            echo "== $name $bbox"
+            ./mctiles -roofdata "$bbox" -crops -satzoom 18 -roofout "crops/crops-$name.bin" 2>&1 | tail -2 || echo "failed: $name"
+          done
+          ls -l crops
+          df -h . | tail -1
+      - name: Train and test
+        run: |
+          test=$(jq -r 'select(.test) | .name' towns.jsonl | paste -sd, -)
+          echo "kept apart for the test: $test"
+          max="${{ inputs.max_buildings }}"; extra=""; if [ "$max" -gt 0 ]; then extra="--max $max"; fi
+          python tools/roofml/train/train.py --data 'crops/*.bin' --test "$test" --epochs "${{ inputs.epochs }}" --out out $extra | tee out-log.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: model
+          path: |
+            out
+            out-log.txt
+          if-no-files-found: ignore
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          tag="${{ inputs.release }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Model: $tag" --notes "A small neural network that reads the satellite picture of a building and guesses its height and whether its roof is flat or sloped. Trained on towns of Brandenburg and Berlin, tested on towns that it has not seen: see report.json."
+          gh release upload "$tag" out/report.json out/model.pt --clobber
+          if [ -f out/model.onnx ]; then gh release upload "$tag" out/model.onnx --clobber; fi

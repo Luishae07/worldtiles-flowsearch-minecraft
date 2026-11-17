@@ -11,7 +11,6 @@ package main
 
 import (
 	"archive/zip"
-	"syscall"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -36,6 +35,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -3056,7 +3056,7 @@ func buildTile(tx, tz int) ([]byte, error) {
 			return r.f, r.err
 		}
 	}
-	qRoads := askLater("SELECT osm_id, tags, geom FROM postpass_line WHERE geom && " + envelope + " AND (tags ? 'highway' OR tags->>'railway' IN ('rail','tram','light_rail'))",
+	qRoads := askLater("SELECT osm_id, tags, geom FROM postpass_line WHERE geom && "+envelope+" AND (tags ? 'highway' OR tags->>'railway' IN ('rail','tram','light_rail'))",
 		func() ([]feat, error) { return roadsOverpass(w, s, e, n) })
 
 	tiles := map[[2]int]*tileImg{}
@@ -3213,14 +3213,14 @@ func buildTile(tx, tz int) ([]byte, error) {
 	}
 	var blds []bld
 	sat := newSat(w, s, e, n)
-	gh := newGhsl() // the typical height of the buildings around, for those that have no known height
+	gh := newGhsl()     // the typical height of the buildings around, for those that have no known height
 	var l2 heightSource // the real heights and roofs: Berlin and the Netherlands have them
 	if x := newLod2(w, s, e, n); x != nil {
 		l2 = x
 	} else if y := newNL(w, s, e, n); y != nil {
 		l2 = y
 	}
-	fr := newFR(w, s, e, n) // France: the real height of the buildings (BD TOPO); nil elsewhere
+	fr := newFR(w, s, e, n)      // France: the real height of the buildings (BD TOPO); nil elsewhere
 	roofFlat, roofSloped := 0, 0 // roofs guessed from the satellite picture in this square
 	// the outlines come from Microsoft's building footprints (found in satellite pictures; the heights are guessed by their computer, -1 when unknown)
 	mb, merr := msBuildings(w, s, e, n)
@@ -3854,6 +3854,7 @@ func main() {
 	roofData := flag.String("roofdata", "", "west,south,east,north (degrees, in Berlin): write the measurements of the roofs to -roofout and stop (see roofdata.go)")
 	roofOut := flag.String("roofout", "roofs.csv", "the file of -roofdata")
 	roofZoom := flag.Int("satzoom", 17, "the zoom of the satellite pictures for -roofdata (18 is about 0.36 m per pixel in Berlin)")
+	cropMode := flag.Bool("crops", false, "with -roofdata: write crops of the satellite picture of every building for training a neural network (see cropdata.go)")
 	backfill := flag.String("backfill", "", "a file with one square per line (\"x z\"): make them all, write them to -backfill-out and stop (see backfill.go)")
 	backfillOut := flag.String("backfill-out", "backfill-out", "the folder of -backfill (the same layout as -dir)")
 	backfillLimit := flag.Int("backfill-limit", 0, "only the first N squares of the list (a test)")
@@ -3867,7 +3868,13 @@ func main() {
 	}
 	if *roofData != "" {
 		satZoom = *roofZoom
-		if err := dumpRoofData(*roofData, *roofOut); err != nil {
+		var err error
+		if *cropMode {
+			err = dumpCrops(*roofData, *roofOut)
+		} else {
+			err = dumpRoofData(*roofData, *roofOut)
+		}
+		if err != nil {
 			log.Fatal(err)
 		}
 		return

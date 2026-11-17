@@ -30,3 +30,5 @@ houses.txt
 shops.txt
 hotel.txt
 licences.txt
+tools/roofml/data/
+tools/roofml/train/out/

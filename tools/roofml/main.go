@@ -21,8 +21,9 @@ import (
 var classNames = []string{"flat", "gabled", "hipped"}
 
 type sample struct {
-	x []float64
-	y int
+	x   []float64
+	y   int
+	src int // the number of the file (the place) that it comes from
 }
 
 func classOf(shape string) int {
@@ -175,13 +176,24 @@ func main() {
 	flag.BoolVar(&binary, "binary", false, "only flat or sloped (gabled and hipped together)")
 	export := flag.String("export", "", "after the test: learn from all the buildings and write the forest to this file (with -binary; the tile service reads it)")
 	exportTrees := flag.Int("exporttrees", 100, "trees in the exported forest")
+	heightMode := flag.Bool("height", false, "test how well the height can be guessed instead of the roof (height.go)")
+	testCSV := flag.String("testcsv", "", "with -height: learn from -csv and test on these files (another part of town)")
 	flag.Parse()
 	if binary {
 		classNames = []string{"flat", "sloped", "-"}
 	}
+	if *heightMode {
+		if *testCSV != "" {
+			runHeightHoldout(*files, *testCSV, *trees, *depth, *minLeaf, *seed)
+		} else {
+			runHeight(*files, *trees, *depth, *minLeaf, *folds, *seed)
+		}
+		return
+	}
 	var data []sample
 	var names []string
-	for _, fn := range strings.Split(*files, ",") {
+	fileList := strings.Split(*files, ",")
+	for fi, fn := range fileList {
 		f, err := os.Open(fn)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -212,7 +224,7 @@ func main() {
 			for i := range x {
 				x[i], _ = strconv.ParseFloat(r[3+i], 64)
 			}
-			data = append(data, sample{x, y})
+			data = append(data, sample{x, y, fi})
 		}
 	}
 	var counts [3]int
