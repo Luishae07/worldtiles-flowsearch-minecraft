@@ -1,0 +1,113 @@
+name: Backfill squares
+
+# Makes a list of squares of the world ahead of time, so that nobody waits for them in the game. Press "Run workflow".
+# The list is a file in tools/mctiles/backfill (one square per line, "x z"). The squares are built in parts that run side by side; the result is
+# one file, squares.tar.gz, in a release of this repository. On the server: tools/mctiles/backfill/fetch.sh unpacks it into the folder of the squares.
+# The squares contain data of OpenStreetMap (ODbL) and others: see the data page of the site for the sources and licences.
+
+on:
+  workflow_dispatch:
+    inputs:
+      list:
+        description: "the list of squares (a file in tools/mctiles/backfill)"
+        default: "landmarks.squares"
+      limit:
+        description: "only the first N squares of the list (0 = all): a test"
+        default: "12"
+      parts:
+        description: "jobs that run side by side"
+        default: "10"
+      release:
+        description: "the tag of the release that gets the result"
+        default: "squares-landmarks"
+
+permissions:
+  contents: write
+
+jobs:
+  split:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: m
+        run: |
+          set -e
+          f="tools/mctiles/backfill/${{ inputs.list }}"
+          n="${{ inputs.limit }}"
+          if [ "$n" -gt 0 ]; then head -n "$n" "$f" > list.txt; else cp "$f" list.txt; fi
+          total=$(wc -l < list.txt)
+          parts="${{ inputs.parts }}"
+          if [ "$total" -lt "$parts" ]; then parts="$total"; fi
+          mkdir parts
+          split -n "l/$parts" -d list.txt parts/part-
+          echo "$total squares in $(ls parts | wc -l) parts"
+          echo "matrix=$(ls parts | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parts
+          path: parts
+
+  build:
+    needs: split
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJson(needs.split.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prepare (the program keeps the data it downloads under /media/data)
+        run: |
+          sudo mkdir -p /media/data
+          sudo chown "$USER" /media/data
+          pip install duckdb
+          cd tools/mctiles
+          go build -o "$GITHUB_WORKSPACE/mctiles" main.go roofdata.go roofmodel.go backfill.go
+          cp roofmodel.json overture_parts.py "$GITHUB_WORKSPACE/"
+      - uses: actions/download-artifact@v4
+        with:
+          name: parts
+          path: parts
+      - name: Make the squares of this part
+        run: |
+          MCTILES_PYTHON=python3 ./mctiles -backfill "parts/${{ matrix.part }}" -backfill-out out -backfill-workers 3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: squares-${{ matrix.part }}
+          path: out
+          if-no-files-found: ignore
+
+  publish:
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: squares-*
+          path: all
+          merge-multiple: true
+      - name: One file, and a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          n=$(find all -name '*.mct' | wc -l)
+          echo "$n squares"
+          if [ -f all/failed.squares ]; then echo "failed squares:"; cat all/failed.squares; fi
+          tar -czf squares.tar.gz -C all --exclude=failed.squares .
+          ls -l squares.tar.gz
+          tag="${{ inputs.release }}"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "Squares: $tag" --notes "Squares of the world made ahead of time by the Backfill workflow (made from open data: see the data page of the site). Unpack into the folder of the squares with tools/mctiles/backfill/fetch.sh."
+          gh release upload "$tag" squares.tar.gz --clobber --repo "$GITHUB_REPOSITORY"

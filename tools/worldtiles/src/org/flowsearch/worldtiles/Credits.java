@@ -16,6 +16,7 @@ public final class Credits implements CommandExecutor {
             {"Towers, spires and roofs of buildings (building parts)", "Overture Maps Foundation, building parts (ODbL / CDLA, from OpenStreetMap and others)", "https://overturemaps.org"},
             {"Real heights of the buildings of France", "BD TOPO bâtiments, IGN (Licence Ouverte 2.0), through the Géoplateforme web service", "https://geoservices.ign.fr/bdtopo"},
             {"Real buildings of Berlin (heights and roofs)", "3D-Stadtmodell LoD2, Land Berlin (open data)", "https://gdi.berlin.de"},
+            {"Real buildings of Brandenburg (heights and roofs)", "3D-Gebäudemodelle LoD2, © GeoBasis-DE/LGB, dl-de/by-2-0", "https://geobasis-bb.de/lgb/de/startseite/geodaten/3d-produkte/3d-gebaeudemodelle/"},
             {"Real buildings of the Netherlands (heights and roofs)", "3DBAG, TU Delft 3D geoinformation (CC BY 4.0)", "https://3dbag.nl"},
             {"The colours of the roofs", "Esri World Imagery (satellite pictures, only read for the average colour of a roof)", "https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9"},
             {"Landmark models (the Eiffel Tower, Notre-Dame, Big Ben ...)", "Open Landmarks (CC BY 4.0), placed with OpenStreetMap data (ODbL)", "https://github.com/benjamintd/open-landmarks"},

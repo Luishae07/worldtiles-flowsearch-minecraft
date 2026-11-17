@@ -1,0 +1,25 @@
+name: BerlinDuels
+main: org.flowsearch.duels.Duels
+version: 1.0.0
+api-version: "26.3"
+description: Ranked 1v1 duels in the streets of Berlin (the world of WorldTiles)
+author: Flowsearch
+commands:
+  queue:
+    description: Go into the queue for a duel
+    usage: /queue <sword|axe|bow>
+  leave:
+    description: Leave the queue, or give up a duel
+    usage: /leave
+  stats:
+    description: Your rating and fights, or those of somebody
+    usage: /stats [player]
+  top:
+    description: The best fighters
+    usage: /top
+  spawn:
+    description: Back to the lobby
+    usage: /spawn
+  kits:
+    description: What is in each kit
+    usage: /kits

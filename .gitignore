@@ -2,6 +2,12 @@
 tools/mctiles/mctiles
 tools/mctiles/mctiles.*
 tools/landmarkvox/landmarkvox
+tools/roofml/roofml
+tools/duels/libs/
+tools/duels/out/
+tools/duels/BerlinDuels.jar
+tools/duels/javac.log
+tools/mctiles/backfill/out*/
 tools/worldtiles/WorldTiles.jar
 tools/worldtiles/libs/
 tools/worldtiles/out/

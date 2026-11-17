@@ -23,6 +23,8 @@ import java.nio.file.Path;
 public final class WorldTiles extends JavaPlugin implements Listener {
     private TileStore store;
     private TileGen gen;
+    /** -Dworldtiles.lite=true: only the world is made (a server for something else, like the duels), none of the game */
+    static final boolean LITE = Boolean.getBoolean("worldtiles.lite");
     private MoonGen moonGen;
     private EarthSky earthSky;
     private Pilot pilot;
@@ -63,6 +65,7 @@ public final class WorldTiles extends JavaPlugin implements Listener {
         gen = new TileGen(store);
         gen.indoor = new Indoor();
         Landmarks.load(new File(System.getProperty("worldtiles.landmarks", "/srv/uploads/flowsites/minecraft/landmarks")), getLogger());
+        if (LITE) return; // a server that only needs the world of Berlin (the duels): no Moon
         MoonData md = new MoonData(Path.of(System.getProperty("worldtiles.moon", "/media/data/moon-data/ldem_64.img")), new File("/srv/uploads/earthsite/tiles/moon/6"));
         if (!md.hasHeights()) getLogger().warning("Moon: the height map /media/data/moon-data/ldem_64.img is missing, the Moon will be flat");
         moonGen = new MoonGen(md);
@@ -71,6 +74,10 @@ public final class WorldTiles extends JavaPlugin implements Listener {
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
+        if (LITE) { // -Dworldtiles.lite=true: only the world (the generator and the spawn), none of the game: no jobs, cars, people, weather or Moon
+            getLogger().info("WorldTiles: lite mode, only the world of the tile service is made");
+            return;
+        }
         Weather weather = new Weather(this, gen);
         weather.start();
         MoonLife moonLife = new MoonLife(this, moonGen, weather);
@@ -154,7 +161,7 @@ public final class WorldTiles extends JavaPlugin implements Listener {
     @EventHandler
     public void onServerLoad(ServerLoadEvent e) {
         World moon = Bukkit.getWorld(MoonLife.WORLD);
-        if (moon == null) {
+        if (moon == null && !LITE) {
             WorldCreator wc = new WorldCreator(MoonLife.WORLD);
             wc.generator(moonGen);
             wc.environment(World.Environment.NORMAL);
@@ -162,7 +169,7 @@ public final class WorldTiles extends JavaPlugin implements Listener {
             moon = wc.createWorld();
         }
         for (World w : Bukkit.getWorlds()) {
-            if (w.getGenerator() != gen && w.getGenerator() != moonGen) continue;
+            if (w.getGenerator() == null || (w.getGenerator() != gen && w.getGenerator() != moonGen)) continue;
             Location s = (w.getGenerator() == moonGen ? moonGen : gen).getFixedSpawnLocation(w, null);
             w.setSpawnLocation(s);
             w.setStorm(false);

@@ -27,6 +27,8 @@
   button:disabled { opacity:.5; cursor:default; }
   select { font:inherit; font-size:14px; color:inherit; background:rgba(255,255,255,.08); border:1px solid var(--line); border-radius:18px; padding:6px 10px; max-width:190px; }
   select option { background:#1a1a1a; color:#f2f2f2; }
+  input#find { font:inherit; font-size:14px; color:inherit; background:rgba(255,255,255,.08); border:1px solid var(--line); border-radius:18px; padding:6px 12px; width:170px; }
+  input#find::placeholder { color:var(--dim); }
   button.pri { background:#e9e9e9; color:#0a0a0a; border-color:#e9e9e9; font-weight:600; }
   #join { margin-left:auto; display:flex; align-items:center; gap:8px; }
   #join small { color:var(--dim); }
@@ -60,6 +62,7 @@
   <label>Time <input id="tod" type="range" min="0" max="100" value="80" aria-label="Time of day"></label>
   <button id="top" type="button">From above</button>
   <select id="place" aria-label="Go to a place"><option value="">Go to a place…</option></select>
+  <input id="find" list="lmlist" type="search" placeholder="Find a landmark…" aria-label="Find a landmark" autocomplete="off"><datalist id="lmlist"></datalist>
   <button id="reset" type="button">Back to Vatican City</button>
   <div id="join"><button id="joinb" type="button">Join the server</button><small id="joins">Minecraft Java 26.3</small></div>
 </div>
@@ -422,7 +425,8 @@ async function main() {
   // places to jump to (the world has its zero at St. Peter's; the same flat mapping as the position shown below)
   const PLACES = [["Vatican City", 41.9029, 12.4534], ["Berlin, Brandenburg Gate", 52.5163, 13.3777], ["Paris, Eiffel Tower", 48.8584, 2.2945], ["London, Big Ben", 51.5007, -0.1246],
     ["Amsterdam, canals", 52.3676, 4.9041], ["New York, Times Square", 40.758, -73.9855], ["Dubai, Burj Khalifa", 25.1972, 55.2744], ["Tokyo, Shibuya", 35.6595, 139.7005],
-    ["Sydney, Opera House", -33.8568, 151.2153], ["Rio, Copacabana", -22.9711, -43.1822], ["Cairo, Giza", 29.9792, 31.1342], ["Matterhorn", 45.9763, 7.6586], ["Venice", 45.4341, 12.3388]];
+    ["Sydney, Opera House", -33.8568, 151.2153], ["Rio, Copacabana", -22.9711, -43.1822], ["Cairo, Giza", 29.9792, 31.1342], ["Matterhorn", 45.9763, 7.6586], ["Venice", 45.4341, 12.3388],
+    ["Rome, Colosseum", 41.8902, 12.4922], ["Barcelona, Sagrada Família", 41.4036, 2.1744], ["Seoul, Namsan Tower", 37.5512, 126.9882], ["Istanbul, Hagia Sophia", 41.0086, 28.9802]];
   const sel = $("place");
   PLACES.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p[0]; sel.appendChild(o); });
   let placeAt = null;
@@ -433,6 +437,14 @@ async function main() {
     cam.tx = x; cam.tz = z; cam.ty = 30; cam.dist = 420; cam.pitch = 0.7; placeAt = {x, z, name: p[0]};
     $("name").textContent = p[0] + ", in blocks";
   };
+  { // a link like walk.html#paris opens the page at the first place whose name starts with that word
+    const h = decodeURIComponent(location.hash.slice(1)).toLowerCase(), i = h ? PLACES.findIndex((p) => p[0].toLowerCase().startsWith(h)) : -1;
+    if (i >= 0) { sel.value = i; sel.onchange(); }
+  }
+  { // a link like walk.html#@48.8583,2.2945 (latitude, longitude) opens the page at that place
+    const m = /^@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(decodeURIComponent(location.hash.slice(1)));
+    if (m) { cam.tx = (+m[2] - 12.4534) * 111320 * Math.cos(41.9029 * Math.PI / 180); cam.tz = -(+m[1] - 41.9029) * 110540; cam.ty = 30; cam.dist = 300; cam.pitch = 0.6; }
+  }
 
   // ---- landmarks: models of famous buildings (landmarks/index.txt and one landmarks/<id>.lm.gz each, made by tools/landmarkvox, the same files as in the game) ----
   // Only the index is read at the start; a model is fetched when you are near it. A landmark replaces the houses of the map around it (a box of the map
@@ -449,6 +461,22 @@ async function main() {
     } catch (err) { console.warn("landmarks:", err); }
   })();
   let lmLoading = 0;
+  // typing in the box: the names of all the landmarks are suggested, and the view jumps to the one that is chosen
+  const finder = $("find"), lmlist = $("lmlist");
+  lmReady.then(() => { for (const l of LM) { const o = document.createElement("option"); o.value = l.name; lmlist.appendChild(o); } });
+  finder.onchange = () => {
+    const q = finder.value.trim().toLowerCase(); if (!q) return;
+    const l = LM.find((x) => x.name.toLowerCase() === q) || LM.find((x) => x.name.toLowerCase().includes(q));
+    if (!l) { finder.value = ""; return; }
+    if (walking) { stopWalk(); $("walk").textContent = "Walk around"; }
+    cam.tx = l.ax; cam.tz = l.az; cam.ty = 30; cam.dist = Math.max(120, Math.min(520, (l.maxX - l.minX) * 2.4)); cam.pitch = 0.6; placeAt = {x: l.ax, z: l.az, name: l.name};
+    finder.value = l.name; finder.blur();
+  };
+  function nearestLandmark(x, z) { // the landmark within 120 blocks of a place, if there is one
+    let best = null, bd = 120;
+    for (const l of LM) { const d = Math.hypot(l.ax - x, l.az - z); if (d < bd) { bd = d; best = l; } }
+    return best;
+  }
   function clearLandmarkBoxes(t) { // the houses of the map inside the area of a landmark are taken out of the square
     for (const l of LM) {
       const lx0 = Math.max(-PAD, l.minX - t.tx * TILE), lx1 = Math.min(TILE + PAD - 1, l.maxX - t.tx * TILE);
@@ -691,7 +719,8 @@ async function main() {
       const x = walking ? P.x : cam.tx, z = walking ? P.z : cam.tz;
       $("pos").textContent = "x " + Math.round(x) + " · z " + Math.round(z) + " (blocks from St. Peter's)";
       const lat = 41.9029 - z / 110540, lon = 12.4534 + x / (111320 * Math.cos(41.9029 * Math.PI / 180));
-      $("name").textContent = placeAt && Math.hypot(x - placeAt.x, z - placeAt.z) < 1500 ? placeAt.name + ", in blocks" : Math.abs(x) < 700 && Math.abs(z) < 700 ? "Vatican City, in blocks" : "The world, in blocks";
+      const nl = nearestLandmark(x, z);
+      $("name").textContent = nl ? nl.name + ", in blocks" : placeAt && Math.hypot(x - placeAt.x, z - placeAt.z) < 1500 ? placeAt.name + ", in blocks" : Math.abs(x) < 700 && Math.abs(z) < 700 ? "Vatican City, in blocks" : "The world, in blocks";
       $("pos").title = lat.toFixed(5) + ", " + lon.toFixed(5);
     }
     renderer.render(scene, camera);

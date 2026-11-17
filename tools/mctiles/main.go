@@ -93,12 +93,19 @@ type feat struct {
 }
 
 var (
-	ppMu   sync.Mutex
-	ppLast time.Time
+	ppMu        sync.Mutex
+	ppLast      time.Time
+	ppDownUntil time.Time
 )
 
 // one question at a time to Postpass, and a pause between two: it is a free service of Geofabrik
 func ask(sql string) ([]feat, error) {
+	ppMu.Lock()
+	if time.Now().Before(ppDownUntil) { // it failed a moment ago: not asked again at once
+		ppMu.Unlock()
+		return nil, fmt.Errorf("postpass is down (not asked again for a moment)")
+	}
+	ppMu.Unlock()
 	var last error
 	for try := 0; try < 3; try++ {
 		ppMu.Lock()
@@ -120,7 +127,11 @@ func ask(sql string) ([]feat, error) {
 		resp.Body.Close()
 		if resp.StatusCode != 200 {
 			last = fmt.Errorf("postpass %d: %.160s", resp.StatusCode, b)
-			time.Sleep(time.Duration(try+1) * 3 * time.Second)
+			if resp.StatusCode >= 500 {
+				time.Sleep(700 * time.Millisecond) // down or overloaded: a short second try, then it is given up
+			} else {
+				time.Sleep(time.Duration(try+1) * 3 * time.Second)
+			}
 			continue
 		}
 		var fc struct {
@@ -131,6 +142,72 @@ func ask(sql string) ([]feat, error) {
 			continue
 		}
 		return fc.Features, nil
+	}
+	ppMu.Lock()
+	ppDownUntil = time.Now().Add(20 * time.Second)
+	ppMu.Unlock()
+	return nil, last
+}
+
+// the squares that were made without their roads (nobody answered): they are given out, but not kept on the disk, so that they are made again later
+var roadsMissing sync.Map
+
+// the public Overpass servers of OpenStreetMap: slower than Postpass, so they are only asked when Postpass does not answer
+var overpassServers = []string{"https://ovp.dresel.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://overpass-api.de/api/interpreter"}
+
+// the roads and railways of a box (degrees) as the features that Postpass would give
+func roadsOverpass(w, s, e, n float64) ([]feat, error) {
+	q := fmt.Sprintf(`[out:json][timeout:25];(way["highway"](%.6f,%.6f,%.6f,%.6f);way["railway"~"^(rail|tram|light_rail)$"](%.6f,%.6f,%.6f,%.6f););out geom tags;`, s, w, n, e, s, w, n, e)
+	var last error
+	for _, u := range overpassServers {
+		req, _ := http.NewRequest("POST", u, strings.NewReader("data="+url.QueryEscape(q)))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("User-Agent", "flowsearch-mctiles/1.0")
+		resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		if err != nil {
+			last = err
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			last = fmt.Errorf("%s: %d", u, resp.StatusCode)
+			continue
+		}
+		var d struct {
+			Elements []struct {
+				ID       int64             `json:"id"`
+				Tags     map[string]string `json:"tags"`
+				Geometry []struct {
+					Lat float64 `json:"lat"`
+					Lon float64 `json:"lon"`
+				} `json:"geometry"`
+			} `json:"elements"`
+		}
+		if err := json.Unmarshal(b, &d); err != nil {
+			last = err
+			continue
+		}
+		var out []feat
+		for _, el := range d.Elements {
+			if len(el.Geometry) < 2 {
+				continue
+			}
+			coords := make([][2]float64, len(el.Geometry))
+			for i, g := range el.Geometry {
+				coords[i] = [2]float64{g.Lon, g.Lat}
+			}
+			raw, _ := json.Marshal(coords)
+			var f feat
+			f.Geometry.Type, f.Geometry.Coordinates = "LineString", raw
+			tags := map[string]any{}
+			for k, v := range el.Tags {
+				tags[k] = v
+			}
+			f.Properties = map[string]any{"osm_id": el.ID, "tags": tags}
+			out = append(out, f)
+		}
+		return out, nil
 	}
 	return nil, last
 }
@@ -1615,7 +1692,7 @@ func msBuildings(w, s, e, n float64) ([]msB, error) {
 
 // ---- colours from satellite pictures (Esri World Imagery): the roofs get the colour of the real roofs ----
 
-const satZoom = 17
+var satZoom = 17 // a variable so that the measuring mode (-roofdata) can use sharper pictures
 
 type satSampler struct{ tiles map[[2]int]image.Image }
 
@@ -1847,8 +1924,19 @@ func lod2Convert(xml []byte, kx, ky int) []byte {
 	return out.Bytes()
 }
 
-// the buildings of one square kilometre (made first when the file is not on the disk); nil, false when the city has none for this place
+// Brandenburg: the same kind of model (LoD2, Landesvermessung und Geobasisinformation Brandenburg, Datenlizenz Deutschland Namensnennung 2.0), one zipped CityGML
+// file per square kilometre, in the same coordinates (UTM 33). Berlin is tried first, then Brandenburg.
+const lod2DirBB = "/media/data/lod2-brandenburg"
+
 func lod2Load(kx, ky int) ([]l2b, bool) {
+	if b, ok := lod2LoadFrom(lod2Dir, fmt.Sprintf("https://gdi.berlin.de/data/a_lod2/atom/LoD2_%d_%d.zip", kx, ky), kx, ky); ok {
+		return b, true
+	}
+	return lod2LoadFrom(lod2DirBB, fmt.Sprintf("https://data.geobasis-bb.de/geobasis/daten/3d_gebaeude/lod2_gml/lod2_33%03d-%d.zip", kx, ky), kx, ky)
+}
+
+// the buildings of one square kilometre (made first when the file is not on the disk); nil, false when this source has none for this place
+func lod2LoadFrom(dir, url string, kx, ky int) ([]l2b, bool) {
 	k := [2]int{kx, ky}
 	lod2Mu.Lock()
 	l, ok := lod2Locks[k]
@@ -1859,14 +1947,14 @@ func lod2Load(kx, ky int) ([]l2b, bool) {
 	lod2Mu.Unlock()
 	l.Lock()
 	defer l.Unlock()
-	path := filepath.Join(lod2Dir, fmt.Sprintf("%d_%d.bin", kx, ky))
+	path := filepath.Join(dir, fmt.Sprintf("%d_%d.bin", kx, ky))
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if _, e2 := os.Stat(path + ".none"); e2 == nil {
 			return nil, false
 		}
-		os.MkdirAll(lod2Dir, 0o755)
-		resp, err := (&http.Client{Timeout: 5 * time.Minute}).Get(fmt.Sprintf("https://gdi.berlin.de/data/a_lod2/atom/LoD2_%d_%d.zip", kx, ky))
+		os.MkdirAll(dir, 0o755)
+		resp, err := (&http.Client{Timeout: 5 * time.Minute}).Get(url)
 		if err != nil {
 			log.Printf("lod2 %d,%d: %v", kx, ky, err)
 			return nil, false
@@ -1880,7 +1968,7 @@ func lod2Load(kx, ky int) ([]l2b, bool) {
 			log.Printf("lod2 %d,%d: status %d", kx, ky, resp.StatusCode)
 			return nil, false
 		}
-		zf, err := os.CreateTemp(lod2Dir, "download-*.zip")
+		zf, err := os.CreateTemp(dir, "download-*.zip")
 		if err != nil {
 			return nil, false
 		}
@@ -1937,7 +2025,8 @@ type lod2Index struct{ b []l2b }
 
 // the buildings of Berlin around a box (degrees); nil when the box is not in Berlin or the city has no files for it
 func newLod2(w, s, e, n float64) *lod2Index {
-	if !(inBerlin(w, n) || inBerlin(e, n) || inBerlin(w, s) || inBerlin(e, s)) {
+	inBB := func(lon, lat float64) bool { return lon > 11.2 && lon < 14.8 && lat > 51.3 && lat < 53.6 } // the box around Brandenburg (Berlin is inside it)
+	if !(inBB(w, n) || inBB(e, n) || inBB(w, s) || inBB(e, s)) {
 		return nil
 	}
 	e0, n0 := utm33(w, s)
@@ -2812,6 +2901,110 @@ func ovTrim() {
 	}
 }
 
+// ---- the status of the Minecraft server, for the website: the same question that the game asks of a server in its list (local, port 25565) ----
+
+type mcState struct {
+	Online  bool   `json:"online"`
+	Players int    `json:"players"`
+	Max     int    `json:"max"`
+	Version string `json:"version,omitempty"`
+}
+
+var (
+	statMu  sync.Mutex
+	statAt  time.Time
+	statVal mcState
+)
+
+func putVarInt(b *bytes.Buffer, v int) {
+	for u := uint32(v); ; u >>= 7 {
+		if u&^0x7F == 0 {
+			b.WriteByte(byte(u))
+			return
+		}
+		b.WriteByte(byte(u&0x7F | 0x80))
+	}
+}
+
+func readVarInt(r *bufio.Reader) (int, error) {
+	var n uint32
+	for shift := uint(0); shift <= 28; shift += 7 {
+		b, err := r.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		n |= uint32(b&0x7F) << shift
+		if b&0x80 == 0 {
+			return int(n), nil
+		}
+	}
+	return 0, fmt.Errorf("varint too long")
+}
+
+func mcPing() mcState {
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:25565", 2*time.Second)
+	if err != nil {
+		return mcState{}
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(4 * time.Second))
+	var pk bytes.Buffer
+	putVarInt(&pk, 0) // the handshake
+	putVarInt(&pk, 0) // protocol version: any is answered for a status
+	host := "127.0.0.1"
+	putVarInt(&pk, len(host))
+	pk.WriteString(host)
+	pk.Write([]byte{0x63, 0xDD}) // port 25565
+	putVarInt(&pk, 1)            // next: status
+	var out bytes.Buffer
+	putVarInt(&out, pk.Len())
+	out.Write(pk.Bytes())
+	out.Write([]byte{1, 0}) // the status request
+	if _, err := conn.Write(out.Bytes()); err != nil {
+		return mcState{}
+	}
+	r := bufio.NewReader(conn)
+	if _, err := readVarInt(r); err != nil {
+		return mcState{}
+	}
+	if id, err := readVarInt(r); err != nil || id != 0 {
+		return mcState{}
+	}
+	n, err := readVarInt(r)
+	if err != nil || n <= 0 || n > 1<<20 {
+		return mcState{}
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return mcState{}
+	}
+	var j struct {
+		Version struct {
+			Name string `json:"name"`
+		} `json:"version"`
+		Players struct {
+			Online int `json:"online"`
+			Max    int `json:"max"`
+		} `json:"players"`
+	}
+	if json.Unmarshal(buf, &j) != nil {
+		return mcState{}
+	}
+	return mcState{Online: true, Players: j.Players.Online, Max: j.Players.Max, Version: j.Version.Name}
+}
+
+func (s *server) mcStatus(w http.ResponseWriter, r *http.Request) {
+	statMu.Lock()
+	if time.Since(statAt) > 10*time.Second {
+		statVal, statAt = mcPing(), time.Now()
+	}
+	v := statVal
+	statMu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=10")
+	json.NewEncoder(w).Encode(v)
+}
+
 // ---- making a square ----
 
 type tree struct{ X, Z, H int }
@@ -2838,13 +3031,22 @@ func buildTile(tx, tz int) ([]byte, error) {
 		return (1 - math.Asinh(math.Tan(r))/math.Pi) / 2 * fz
 	}
 	// the four questions to Postpass are asked at once, while the elevation pictures are loading
-	askLater := func(sql string) func() ([]feat, error) {
+	askLater := func(sql string, fallback func() ([]feat, error)) func() ([]feat, error) {
 		type res struct {
 			f   []feat
 			err error
 		}
 		c := make(chan res, 1)
-		go func() { f, e := ask(sql); c <- res{f, e} }()
+		go func() {
+			f, e := ask(sql)
+			if e != nil && fallback != nil { // Postpass does not answer: the same from OpenStreetMap's own servers
+				if f2, e2 := fallback(); e2 == nil {
+					log.Printf("tile %d,%d: postpass failed (%v): the roads come from Overpass", tx, tz, e)
+					f, e = f2, nil
+				}
+			}
+			c <- res{f, e}
+		}()
 		var r res
 		got := false
 		return func() ([]feat, error) {
@@ -2854,7 +3056,8 @@ func buildTile(tx, tz int) ([]byte, error) {
 			return r.f, r.err
 		}
 	}
-	qRoads := askLater("SELECT osm_id, tags, geom FROM postpass_line WHERE geom && " + envelope + " AND (tags ? 'highway' OR tags->>'railway' IN ('rail','tram','light_rail'))")
+	qRoads := askLater("SELECT osm_id, tags, geom FROM postpass_line WHERE geom && " + envelope + " AND (tags ? 'highway' OR tags->>'railway' IN ('rail','tram','light_rail'))",
+		func() ([]feat, error) { return roadsOverpass(w, s, e, n) })
 
 	tiles := map[[2]int]*tileImg{}
 	var tmu sync.Mutex
@@ -2968,8 +3171,10 @@ func buildTile(tx, tz int) ([]byte, error) {
 	// roads
 	widths := map[string]float64{"motorway": 10, "trunk": 9, "primary": 8, "secondary": 7, "tertiary": 6, "residential": 5, "unclassified": 5, "living_street": 4, "service": 3.5, "pedestrian": 4, "track": 3, "footway": 2, "path": 1.6, "steps": 2, "cycleway": 2}
 	roads, err := qRoads()
-	if err != nil {
-		return nil, err
+	if err != nil { // no roads from anybody: the square is made without them all the same (it answers 200) and is not kept, so that it gets its roads later
+		log.Printf("tile %d,%d: no roads (%v): made without them, not kept", tx, tz, err)
+		roadsMissing.Store([2]int{tx, tz}, true)
+		roads, err = nil, nil
 	}
 	sort.SliceStable(roads, func(i, j int) bool {
 		return widths[str(roads[i].Properties, "highway")] > widths[str(roads[j].Properties, "highway")]
@@ -3016,6 +3221,7 @@ func buildTile(tx, tz int) ([]byte, error) {
 		l2 = y
 	}
 	fr := newFR(w, s, e, n) // France: the real height of the buildings (BD TOPO); nil elsewhere
+	roofFlat, roofSloped := 0, 0 // roofs guessed from the satellite picture in this square
 	// the outlines come from Microsoft's building footprints (found in satellite pictures; the heights are guessed by their computer, -1 when unknown)
 	mb, merr := msBuildings(w, s, e, n)
 	if merr != nil {
@@ -3063,6 +3269,21 @@ func buildTile(tx, tz int) ([]byte, error) {
 				hs = strconv.FormatFloat(math.Max(3, math.Min(80, v*(0.7+0.6*float64(hashN(id, 1000))/1000))), 'f', 1, 64)
 			}
 		}
+		if shape == "" && l2 == nil && sat != nil { // no real roof known (no city model): flat or sloped, guessed from the satellite picture (tall buildings keep the old rule)
+			if rm := getRoofModel(); rm != nil {
+				if hv, _ := strconv.ParseFloat(hs, 64); hv < 15 {
+					if fv, ok := roofFeatures(sat, m.ring); ok {
+						if rm.flat(fv) >= 0.5 {
+							shape = "flat"
+							roofFlat++
+						} else {
+							shape = "gabled"
+							roofSloped++
+						}
+					}
+				}
+			}
+		}
 		blds = append(blds, bld{rings: g.local([][]pt{m.ring}), tags: func(k string) string {
 			switch k {
 			case "height":
@@ -3074,6 +3295,9 @@ func buildTile(tx, tz int) ([]byte, error) {
 			}
 			return ""
 		}, id: id})
+	}
+	if roofFlat+roofSloped > 0 {
+		log.Printf("roofml: square %d,%d: %d flat and %d sloped roofs guessed from the satellite picture", tx, tz, roofFlat, roofSloped)
 	}
 	if l2 == nil { // outside Berlin and the Netherlands: the building parts of Overture (towers on bases, spires, roofs of their own), on top of the outlines
 		if ps, err := ovParts(w, s, e, n); err != nil {
@@ -3170,6 +3394,38 @@ func buildTile(tx, tz int) ([]byte, error) {
 		}
 		roofH = math.Min(roofH, H-1)
 		wallH := H - roofH
+		// a gabled roof (or the plain pitched roof of a small house) on a plain rectangle: a ridge along the long side and straight gable ends, not a slope from all four edges.
+		// gt[i] is how high a cell is on the roof, 0 at the eaves and 1 at the ridge; any other shape keeps the slope from every edge (gt stays nil)
+		var gt []float64
+		if roofH > 0 && (shape == "gabled" || (shape == "" && !b.part)) && len(cells) >= 6 {
+			var mx, mz float64
+			for _, c := range cells {
+				mx, mz = mx+float64(c[0]), mz+float64(c[1])
+			}
+			mx, mz = mx/float64(len(cells)), mz/float64(len(cells))
+			var sxx, szz, sxz float64
+			for _, c := range cells {
+				dx, dz := float64(c[0])-mx, float64(c[1])-mz
+				sxx, szz, sxz = sxx+dx*dx, szz+dz*dz, sxz+dx*dz
+			}
+			th := 0.5 * math.Atan2(2*sxz, sxx-szz) // the long direction
+			cs, sn := math.Cos(th), math.Sin(th)
+			vs := make([]float64, len(cells))
+			umin, umax, vmin, vmax := 1e9, -1e9, 1e9, -1e9
+			for i, c := range cells {
+				dx, dz := float64(c[0])-mx, float64(c[1])-mz
+				u, v := dx*cs+dz*sn, -dx*sn+dz*cs
+				vs[i] = v
+				umin, umax, vmin, vmax = math.Min(umin, u), math.Max(umax, u), math.Min(vmin, v), math.Max(vmax, v)
+			}
+			if float64(len(cells)) >= 0.78*(umax-umin+1)*(vmax-vmin+1) && umax-umin >= vmax-vmin {
+				half, vc := (vmax-vmin)/2+0.5, (vmax+vmin)/2
+				gt = make([]float64, len(cells))
+				for i := range cells {
+					gt[i] = math.Max(0, 1-math.Abs(vs[i]-vc)/half)
+				}
+			}
+		}
 		wall, roof := wallMat(b.tags, b.id), roofMat(b.tags, b.id)
 		if !b.part && len(b.rings) > 0 && ringArea(b.rings[0]) >= 500 && hashN(b.id, 25) == 0 { // the same rule as in findDataCenter
 			wall = 40 // a data center: one big building in 25 (the game knows it by this wall code)
@@ -3202,6 +3458,9 @@ func buildTile(tx, tz int) ([]byte, error) {
 					extra = roofH * math.Sqrt(math.Max(0, 1-(1-t)*(1-t)))
 				default:
 					extra = roofH * t
+					if gt != nil {
+						extra = roofH * gt[i]
+					}
 				}
 			}
 			g.wallH[ix], g.roofH[ix] = uint8(math.Round(wallH)), uint8(math.Round(extra))
@@ -3470,7 +3729,10 @@ func (s *server) build(x, z int) ([]byte, error) {
 		defer func() { <-s.buildSem }()
 		t0 := time.Now()
 		data, err := buildTile(x, z)
-		if err == nil {
+		_, noRoads := roadsMissing.LoadAndDelete(key)
+		if err == nil && noRoads {
+			log.Printf("tile %d,%d made in %.1fs without roads (not kept)", x, z, time.Since(t0).Seconds())
+		} else if err == nil {
 			p := s.path(x, z)
 			if e := os.MkdirAll(filepath.Dir(p), 0o755); e == nil {
 				tmp := p + ".tmp"
@@ -3589,8 +3851,28 @@ func main() {
 	addr := flag.String("addr", "127.0.0.1:8858", "address to listen on")
 	maxGB := flag.Float64("max-gb", 60, "stop making new squares when the folder is this big")
 	builders := flag.Int("builders", 2, "squares made at the same time")
-	go msPrewarm()
+	roofData := flag.String("roofdata", "", "west,south,east,north (degrees, in Berlin): write the measurements of the roofs to -roofout and stop (see roofdata.go)")
+	roofOut := flag.String("roofout", "roofs.csv", "the file of -roofdata")
+	roofZoom := flag.Int("satzoom", 17, "the zoom of the satellite pictures for -roofdata (18 is about 0.36 m per pixel in Berlin)")
+	backfill := flag.String("backfill", "", "a file with one square per line (\"x z\"): make them all, write them to -backfill-out and stop (see backfill.go)")
+	backfillOut := flag.String("backfill-out", "backfill-out", "the folder of -backfill (the same layout as -dir)")
+	backfillLimit := flag.Int("backfill-limit", 0, "only the first N squares of the list (a test)")
+	backfillWorkers := flag.Int("backfill-workers", 3, "squares made at the same time by -backfill")
 	flag.Parse()
+	if *backfill != "" {
+		if err := runBackfill(*backfill, *backfillOut, *backfillLimit, *backfillWorkers); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if *roofData != "" {
+		satZoom = *roofZoom
+		if err := dumpRoofData(*roofData, *roofOut); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	go msPrewarm()
 	if err := os.MkdirAll(*dir, 0o755); err != nil {
 		log.Fatal(err)
 	}
@@ -3599,6 +3881,7 @@ func main() {
 	mux.HandleFunc("/tiles/3d/load", s.load)
 	mux.HandleFunc("/tiles/3d/info", s.status)
 	mux.HandleFunc("/tiles/3d/datacenter", s.datacenter)
+	mux.HandleFunc("/tiles/3d/server", s.mcStatus)
 	log.Println("mctiles listening on", *addr, "folder", *dir)
 	srv := &http.Server{Addr: *addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 4 * time.Minute}
 	log.Fatal(srv.ListenAndServe())

@@ -13,6 +13,9 @@ Not made by or connected to Mojang or Microsoft. "Minecraft" is a trademark of M
 | `tools/worldtiles` | The Paper plugin (Java). Builds the world from tiles, and has the game: jobs, shops, houses, hotels, datacenters, trains, flights, football, weather, `/go`, `/tpll`, `/credits` and more. `./build.sh` builds `WorldTiles.jar` into the server's plugins folder. |
 | `tools/mctiles` | The tile service (Go, port 8858). Makes a 500 m square of the world (ground, water, roads, buildings, trees) from open data, on demand. |
 | `tools/landmarkvox` | Turns 3D landmark models (GLB) into blocks, for the Eiffel Tower and about 1,300 more. |
+| `tools/duels` | BerlinDuels, a second Paper plugin: ranked 1v1 duels in the streets of Berlin (queue, three kits, Elo, leaderboard file for the website). Run it on its own server with `-Dworldtiles.lite=true` so that WorldTiles only makes the world. |
+| `tools/roofml` | Learns from the satellite pictures of buildings where a city model knows the roof (`mctiles -roofdata` makes the measurements) whether a roof is flat or sloped. Its forest is `tools/mctiles/roofmodel.json`. |
+| `tools/mctiles/backfill` | Lists of squares to make ahead of time, and the GitHub Actions workflow (`.github/workflows/backfill.yml`) that makes them; `fetch.sh` puts the result into the folder of the tile service. |
 | `tools/transit`, `tools/mcgen` | Helpers for train timetables and a few generators. |
 | `index.html`, `walk.html` | The website, with a browser version that builds the same blocks (three.js). |
 

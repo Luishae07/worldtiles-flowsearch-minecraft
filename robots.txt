@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /tiles/
+Disallow: /landmarks/
+
+Sitemap: https://minecraft.flowsearch.org/sitemap.xml

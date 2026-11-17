@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Landmarks: The World in Blocks</title>
+<meta name="description" content="1,264 famous buildings built as real 3D models in the Minecraft world of the real Earth. Search them, visit them in your browser, or teleport there in the game.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://minecraft.flowsearch.org/landmarks.html">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Landmarks: The World in Blocks">
+<meta property="og:description" content="1,264 famous buildings as real 3D models in a Minecraft world of the real Earth.">
+<meta property="og:url" content="https://minecraft.flowsearch.org/landmarks.html">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<nav><div class="wrap"><b><a href="./"><i></i>The World in Blocks</a></b><a class="hide" href="./#places">Places</a><a class="hide" href="./#features">Features</a><a class="hide" href="landmarks.html" aria-current="page">Landmarks</a><a class="hide" href="data.html">Data</a><a href="./#join">Join</a><a class="gh" href="https://github.com/Luishae07/worldtiles-flowsearch-minecraft" target="_blank" rel="noopener">GitHub</a></div></nav>
+
+<header class="page-head"><div class="wrap">
+  <h1>Landmarks</h1>
+  <p>Famous buildings are real 3D models turned into blocks, one block per metre, so a tower is a tower and not a box. Search by name, open one in your browser, or copy the command to go there in the game.</p>
+</div></header>
+
+<main id="main" class="wrap">
+  <section style="padding-top:22px">
+    <div class="tools">
+      <input type="search" id="q" placeholder="Search 1,264 landmarks: Colosseum, Burj, Big Ben…" aria-label="Search the landmarks" autocomplete="off">
+      <span class="count" id="count">Loading…</span>
+    </div>
+    <div class="rows" id="rows" aria-live="polite"></div>
+    <p class="small" style="margin-top:12px">Models: <a href="https://github.com/benjamintd/open-landmarks" target="_blank" rel="noopener">Open Landmarks</a> (CC BY 4.0) and <a href="https://github.com/alexwohlbruck/landmarks" target="_blank" rel="noopener">Landmarks by Alex Wohlbruck</a> (CC0). Where a landmark is in both, the Open Landmarks one is used. Places come from OpenStreetMap data (ODbL). In the game, <code>/tpll</code> takes you to the exact spot.</p>
+  </section>
+</main>
+
+<footer><div class="wrap">
+  <p class="links"><a href="./">Home</a><a href="data.html">Data and licences</a><a href="walk.html">Browser version</a><a href="https://github.com/Luishae07/worldtiles-flowsearch-minecraft" target="_blank" rel="noopener">GitHub</a></p>
+  <p>A non-commercial project by Flowsearch. Not made by or connected to Mojang or Microsoft.</p>
+</div></footer>
+<script>
+(function () {
+  var all = [], shown = 0, PAGE = 100, match = [];
+  var rows = document.getElementById("rows"), count = document.getElementById("count"), q = document.getElementById("q");
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]; }); }
+  function row(l) {
+    var cmd = "/tpll " + l.lat + " " + l.lon;
+    return '<div class="row"><div><b>' + esc(l.name) + '</b><div class="meta">' + l.lat + ", " + l.lon + " · " + l.h + " blocks high · " + esc(l.lic) + '</div></div>' +
+      '<div class="acts"><a class="go" href="walk.html#@' + l.lat + "," + l.lon + '">Browser</a><button class="copy" type="button" data-cmd="' + esc(cmd) + '">Copy command</button></div></div>';
+  }
+  function render(more) {
+    if (!more) { shown = 0; rows.innerHTML = ""; }
+    var next = match.slice(shown, shown + PAGE), html = next.map(row).join("");
+    var old = rows.querySelector(".more"); if (old) old.remove();
+    rows.insertAdjacentHTML("beforeend", html);
+    shown += next.length;
+    if (shown < match.length) rows.insertAdjacentHTML("beforeend", '<button class="more" type="button">Show ' + Math.min(PAGE, match.length - shown) + " more (" + (match.length - shown) + " left)</button>");
+    if (!match.length) rows.innerHTML = '<div class="row"><div>No landmark has that name.</div></div>';
+    count.textContent = match.length === all.length ? all.length.toLocaleString("en") + " landmarks" : match.length.toLocaleString("en") + " of " + all.length.toLocaleString("en");
+  }
+  function filter() {
+    var t = q.value.trim().toLowerCase();
+    match = t ? all.filter(function (l) { return l.name.toLowerCase().indexOf(t) >= 0; }) : all;
+    render(false);
+  }
+  rows.addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    if (b.classList.contains("more")) { render(true); return; }
+    if (b.dataset.cmd) {
+      var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy command"; }, 1400); };
+      try { navigator.clipboard.writeText(b.dataset.cmd).then(done, function () { b.textContent = b.dataset.cmd; }); } catch (err) { b.textContent = b.dataset.cmd; }
+    }
+  });
+  q.addEventListener("input", filter);
+  fetch("landmarks/index.txt").then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); }).then(function (txt) {
+    txt.split("\n").forEach(function (line) {
+      var p = line.split("\t"); if (p.length < 12) return;
+      all.push({name: p[1], lon: (+p[2]).toFixed(5), lat: (+p[3]).toFixed(5), h: +p[8], lic: p[11].indexOf("CC0") === 0 ? "CC0" : p[11].indexOf("CC BY 4.0") === 0 ? "CC BY 4.0" : p[11]});
+    });
+    all.sort(function (a, b) { return a.name.localeCompare(b.name, "en"); });
+    match = all; render(false);
+    var s = new URLSearchParams(location.search).get("q"); if (s) { q.value = s; filter(); }
+  }).catch(function () { count.textContent = "The list could not be loaded. Reload the page to try again."; });
+})();
+</script>
+</body>
+</html>
